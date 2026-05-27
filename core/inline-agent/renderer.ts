@@ -38,6 +38,15 @@ export function injectInlineAgentStyles(): void {
       cursor: pointer;
       user-select: none;
     }
+    .dpp-agent-step-header::after {
+      content: '\\25BC';
+      font-size: 9px;
+      margin-left: auto;
+      transition: transform 0.2s ease;
+    }
+    .dpp-agent-step[data-collapsed="true"] .dpp-agent-step-header::after {
+      transform: rotate(-90deg);
+    }
     .dpp-agent-step-indicator {
       font-weight: 600;
       color: #6366f1;
@@ -65,17 +74,28 @@ export function injectInlineAgentStyles(): void {
       word-break: break-word;
       max-height: 300px;
       overflow-y: auto;
+      transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.2s ease;
     }
     .dpp-agent-step-body:empty {
       display: none;
     }
     .dpp-agent-step[data-collapsed="true"] .dpp-agent-step-body {
-      display: none;
+      max-height: 0;
+      padding: 0 10px;
+      opacity: 0;
+      overflow: hidden;
+    }
+    .dpp-agent-step[data-collapsed="true"] .dpp-agent-step-tools {
+      max-height: 0;
+      padding: 0 10px;
+      opacity: 0;
+      overflow: hidden;
     }
     .dpp-agent-step-tools {
       padding: 4px 10px 8px;
       font-size: 12px;
       color: var(--dpp-muted, #6b7280);
+      transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.2s ease;
     }
     .dpp-agent-step-tool-item {
       padding: 2px 0;

@@ -44,7 +44,7 @@ export async function getMcpToolDescriptors(options?: {
     if (!server) continue;
     if (!options?.includeDisabled && !server.enabled) continue;
     if (options?.maxAgeMs != null && now - cache.refreshedAt > options.maxAgeMs) continue;
-    if (cache.expiresAt <= now) continue;
+    // Expired descriptors are still useful for prompt injection; execution refreshes stale discovery before calling.
     const policyDescriptors = applyMcpToolPolicy(cache.descriptors, server);
     descriptors.push(
       ...policyDescriptors.filter((descriptor) =>

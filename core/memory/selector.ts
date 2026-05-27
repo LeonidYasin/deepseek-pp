@@ -1,5 +1,8 @@
 import type { Memory } from '../types';
 import { MEMORY_TOKEN_BUDGET, STOP_WORDS } from '../constants';
+import { estimateTokens } from '../token/estimator';
+
+export { estimateTokens } from '../token/estimator';
 
 const segmenter =
   typeof Intl !== 'undefined' && Intl.Segmenter
@@ -17,14 +20,6 @@ export function segmentText(text: string): string[] {
     .toLowerCase()
     .split(/[\s,，。！？；：、\-_/]+/)
     .filter((w) => w.length > 1 && !STOP_WORDS.has(w));
-}
-
-export function estimateTokens(text: string): number {
-  let tokens = 0;
-  for (const char of text) {
-    tokens += char.charCodeAt(0) > 0x7F ? 1.5 : 0.25;
-  }
-  return Math.ceil(tokens);
 }
 
 function keywordScore(promptWords: string[], memory: Memory): number {

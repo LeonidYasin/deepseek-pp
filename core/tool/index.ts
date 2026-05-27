@@ -40,6 +40,8 @@ export {
   createXmlToolCallRegex,
   getToolCloseTag,
   getToolInvocationLabel,
+  getPreferredToolInvocationName,
+  getToolInvocationNames,
   getToolOpenTag,
   hasXmlToolMarker,
 } from './invocation';

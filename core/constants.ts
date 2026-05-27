@@ -12,6 +12,8 @@ export const PRESET_REINJECTION_INTERVAL = 10;
 
 export const MSG_PREFIX = 'DEEPSEEK_PP';
 
+export const DPP_MANAGED_AGENT_PROMPT_MARKER = '<!-- deepseek-pp-managed-agent-runner:v1 -->';
+
 export const DSML = '｜DSML｜';
 
 export const TOOL_NAMES = DEFAULT_TOOL_DESCRIPTORS.map((tool) => tool.invocationName);
@@ -37,9 +39,12 @@ You have access to a set of tools. To call a tool, output an XML block with the 
 {"type": "user", "name": "用户职业", "content": "前端开发", "tags": ["前端"]}
 </memory_save>
 
-The JSON body MUST be valid JSON on its own. Do NOT add any other text inside the tags, only JSON. You can place tool calls anywhere in your reply (not only at the end).
+The JSON body MUST be valid JSON on its own. Do NOT add any other text inside the tags, only JSON. Use forward slashes or escaped backslashes for local file paths. You can place tool calls anywhere in your reply (not only at the end).
 The extension only executes direct tool-name tags. Never use wrapper formats such as <invoke name="tool_name">...</invoke> or <tool_call>...</tool_call>.
 The tag name MUST exactly match one of the available tool names.
+If a tool is listed in Available Tools, it is connected through the extension and you can call it by emitting the XML tag. Do NOT say you cannot call listed MCP tools.
+Never output pseudo tool-call JSON such as {"tool":"name","arguments":{...}} in a Markdown code block. That is explanation text, not an executable call.
+Never place executable tool XML in a thinking/reasoning section. Put tool XML in the final assistant answer content so the extension can execute it.
 
 ### Available Tools
 
@@ -87,9 +92,12 @@ You have access to a set of tools. To call a tool, output an XML block with the 
 {"type": "user", "name": "用户职业", "content": "前端开发", "tags": ["前端"]}
 </memory_save>
 
-The JSON body MUST be valid JSON on its own. Do NOT add any other text inside the tags, only JSON.
+The JSON body MUST be valid JSON on its own. Do NOT add any other text inside the tags, only JSON. Use forward slashes or escaped backslashes for local file paths.
 The extension only executes direct tool-name tags. Never use wrapper formats such as <invoke name="tool_name">...</invoke> or <tool_call>...</tool_call>.
 The tag name MUST exactly match one of the available tool names.
+If a tool is listed in Available Tools, it is connected through the extension and you can call it by emitting the XML tag. Do NOT say you cannot call listed MCP tools.
+Never output pseudo tool-call JSON such as {"tool":"name","arguments":{...}} in a Markdown code block. That is explanation text, not an executable call.
+Never place executable tool XML in a thinking/reasoning section. Put tool XML in the final assistant answer content so the extension can execute it.
 
 ### Available Tools
 

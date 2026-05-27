@@ -96,6 +96,11 @@ try {
   assert.deepEqual(shortCalls[0].payload, { text: 'short' });
   assert.equal(stripToolCalls(shortResponseText, injectable).trim(), 'Before  After');
 
+  const emptyBodyCalls = extractToolCalls('<echo></echo>', injectable);
+  assert.equal(emptyBodyCalls.length, 1);
+  assert.deepEqual(emptyBodyCalls[0].payload, {});
+  assert.equal(emptyBodyCalls[0].parseError, undefined);
+
   const badPathText = String.raw`<echo>{"path":"D:\ai project\deepseek-pp-main"}</echo>`;
   const badPathCalls = extractToolCalls(badPathText, injectable);
   assert.equal(badPathCalls.length, 1);
@@ -400,10 +405,11 @@ function extractToolCalls(text, descriptors) {
   let match;
   while ((match = regex.exec(text))) {
     const descriptor = catalog.byName.get(match[1]);
+    const body = match[2].trim();
     let payload = {};
     let parseError;
     try {
-      payload = JSON.parse(match[2]);
+      payload = body.length === 0 ? {} : JSON.parse(body);
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         parseError = { code: 'tool_call_payload_invalid', message: 'Tool call body must be a JSON object.', retryable: false };
         payload = {};

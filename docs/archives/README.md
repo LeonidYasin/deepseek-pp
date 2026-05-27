@@ -23,3 +23,19 @@
 - Tracking mode: LOCAL_ONLY
 - Archived progress: [MASTER.md](edge-firefox-browser-support/progress/MASTER.md)
 - GitHub repository: `zhu1090093659/deepseek-pp`
+
+### token-speed-indicator
+
+- Description: Live token output speed indicator for the DeepSeek prompt input box during streaming assistant responses.
+- Date range: 2026-05-27 - 2026-05-27
+- Tracking mode: LOCAL_ONLY
+- Archived progress: [MASTER.md](token-speed-indicator/progress/MASTER.md)
+- GitHub repository: `zhu1090093659/deepseek-pp`
+
+### officecli-productization
+
+- Description: Built-in `/officecli` skill, safe OfficeCLI MCP provider, sidepanel quick-start, root/write policy enforcement, smoke coverage, and operator documentation.
+- Date range: 2026-05-27 - 2026-05-27
+- Tracking mode: GITHUB_STANDARD
+- Archived progress: [MASTER.md](officecli-productization/progress/MASTER.md)
+- GitHub repository: `zhu1090093659/deepseek-pp`

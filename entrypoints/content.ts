@@ -77,6 +77,7 @@ let currentDeepSeekTheme: DeepSeekTheme | null = null;
 let inlineAgentContainer: HTMLElement | null = null;
 let inlineAgentCurrentStep: HTMLElement | null = null;
 let inlineAgentLoopId: string | null = null;
+let inlineAgentContainerObserver: MutationObserver | null = null;
 let currentMemories: Memory[] = [];
 let currentSkills: Skill[] = [];
 let currentActivePreset: SystemPromptPreset | null = null;
@@ -573,6 +574,15 @@ function startInlineAgentIfNeeded(
   const contentDiv = target.querySelector('._74c0879') ?? target;
   contentDiv.appendChild(container);
 
+  // Keep agent container at the bottom when DeepSeek's UI appends new content
+  inlineAgentContainerObserver?.disconnect();
+  inlineAgentContainerObserver = new MutationObserver(() => {
+    if (container.parentNode && container.nextSibling) {
+      container.parentNode.appendChild(container);
+    }
+  });
+  inlineAgentContainerObserver.observe(contentDiv, { childList: true });
+
   window.postMessage({
     source: 'deepseek-pp-content',
     type: 'START_INLINE_AGENT_LOOP',
@@ -585,6 +595,8 @@ function stopInlineAgent(): void {
   inlineAgentLoopId = null;
   inlineAgentContainer = null;
   inlineAgentCurrentStep = null;
+  inlineAgentContainerObserver?.disconnect();
+  inlineAgentContainerObserver = null;
   window.postMessage({ source: 'deepseek-pp-content', type: 'STOP_INLINE_AGENT_LOOP' });
   if (container) {
     const footer = createAgentFooter(0, 0, false, '已停止');
@@ -616,6 +628,12 @@ function handleAgentStepComplete(msg: InlineAgentStepCompleteMsg): void {
     ? `完成（${msg.toolExecutions.length} 个工具）`
     : '完成';
   updateStepStatus(inlineAgentCurrentStep, 'complete', label);
+
+  const completedStep = inlineAgentCurrentStep;
+  setTimeout(() => {
+    completedStep.setAttribute('data-collapsed', 'true');
+  }, 800);
+
   inlineAgentCurrentStep = null;
 }
 
@@ -627,6 +645,8 @@ function handleAgentLoopComplete(msg: InlineAgentLoopCompleteMsg): void {
   inlineAgentLoopId = null;
   inlineAgentContainer = null;
   inlineAgentCurrentStep = null;
+  inlineAgentContainerObserver?.disconnect();
+  inlineAgentContainerObserver = null;
 }
 
 function handleAgentLoopError(msg: InlineAgentLoopErrorMsg): void {
@@ -641,6 +661,8 @@ function handleAgentLoopError(msg: InlineAgentLoopErrorMsg): void {
   inlineAgentLoopId = null;
   inlineAgentContainer = null;
   inlineAgentCurrentStep = null;
+  inlineAgentContainerObserver?.disconnect();
+  inlineAgentContainerObserver = null;
 }
 
 function runToolExecution(call: ToolCall): Promise<ToolCardResult> {

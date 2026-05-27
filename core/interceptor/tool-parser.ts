@@ -31,7 +31,7 @@ function extractXmlToolCalls(text: string, catalog: ToolInvocationCatalog): Tool
     const raw = match[0];
     let payload: Record<string, unknown>;
     try {
-      const parsed = JSON.parse(body);
+      const parsed = body.length === 0 ? {} : JSON.parse(body);
       if (!isToolPayload(parsed)) {
         calls.push(createToolCallFromInvocation(invocationName, {}, raw, catalog, {
           parseError: createToolParseError(

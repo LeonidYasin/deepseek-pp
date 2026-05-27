@@ -69,6 +69,13 @@ export async function fetchWithTimeout(
     if (err instanceof DOMException && err.name === 'AbortError') {
       throw new McpTransportError('mcp_transport_timeout', `MCP request exceeded ${timeoutMs} ms.`);
     }
+    if (err instanceof TypeError) {
+      const endpoint = typeof input === 'string' || input instanceof URL ? String(input) : 'configured endpoint';
+      throw new McpTransportError(
+        'mcp_network_error',
+        `Cannot reach MCP server at ${endpoint}. Start the local provider, verify the URL, then retry.`,
+      );
+    }
     throw err;
   } finally {
     clearTimeout(timeout);

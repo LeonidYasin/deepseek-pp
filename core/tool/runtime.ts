@@ -63,6 +63,18 @@ export async function executeRuntimeToolCall(
 }
 
 async function executeToolCallWithoutHistory(call: ToolCall): Promise<ToolResult> {
+  if (call.parseError) {
+    return {
+      ok: false,
+      summary: '工具格式错误',
+      detail: call.parseError.message,
+      name: call.name,
+      provider: call.provider,
+      descriptorId: call.descriptorId,
+      error: call.parseError,
+    };
+  }
+
   if (isMemoryToolName(call.name)) {
     return executeMemoryToolCall(memoryRuntime, call);
   }

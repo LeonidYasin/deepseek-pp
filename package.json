@@ -1,6 +1,6 @@
 {
   "name": "deepseek-plus-plus",
-  "description": "Agentic memory, skill, automation, and MCP tools for DeepSeek",
+  "description": "Agentic memory, skill, AgentRun, and MCP tools for DeepSeek",
   "private": true,
   "version": "0.3.0",
   "type": "module",
@@ -17,7 +17,10 @@
     "zip:firefox": "wxt zip --browser firefox --mv3",
     "zip:all": "npm run zip:chrome && npm run zip:edge && npm run zip:firefox",
     "compile": "tsc --noEmit",
+    "officecli:mcp": "node scripts/officecli-mcp-server.mjs",
+    "smoke:officecli": "node scripts/officecli-smoke.mjs",
     "smoke:mcp": "node scripts/mcp-smoke.mjs",
+    "verify:agent-run": "node scripts/agent-run-contract-smoke.mjs",
     "verify:mcp:mock": "node scripts/mcp-live-mock.mjs",
     "postinstall": "wxt prepare"
   },

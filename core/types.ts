@@ -1,14 +1,4 @@
 import type {
-  AutomationCreateInput,
-  AutomationId,
-  AutomationRun,
-  AutomationRunId,
-  AutomationRunListOptions,
-  AutomationRunUpdateInput,
-  AutomationStatus,
-  AutomationUpdateInput,
-} from './automation/types';
-import type {
   McpServerCreateInput,
   McpServerId,
   McpServerUpdateInput,
@@ -187,17 +177,6 @@ export type MessageAction =
   | { type: 'DELETE_PRESET'; payload: { id: string } }
   | { type: 'SET_ACTIVE_PRESET'; payload: { id: string | null } }
   | { type: 'GET_ACTIVE_PRESET' }
-  | { type: 'GET_AUTOMATIONS' }
-  | { type: 'GET_AUTOMATION'; payload: { id: AutomationId } }
-  | { type: 'CREATE_AUTOMATION'; payload: AutomationCreateInput }
-  | { type: 'UPDATE_AUTOMATION'; payload: { id: AutomationId; patch: AutomationUpdateInput } }
-  | { type: 'DELETE_AUTOMATION'; payload: { id: AutomationId } }
-  | { type: 'SET_AUTOMATION_STATUS'; payload: { id: AutomationId; status: AutomationStatus } }
-  | { type: 'RUN_AUTOMATION_NOW'; payload: { id: AutomationId } }
-  | { type: 'GET_AUTOMATION_RUNS'; payload: AutomationRunListOptions }
-  | { type: 'GET_AUTOMATION_RUN'; payload: { id: AutomationRunId } }
-  | { type: 'APPEND_AUTOMATION_RUN'; payload: AutomationRun }
-  | { type: 'UPDATE_AUTOMATION_RUN'; payload: { id: AutomationRunId; patch: AutomationRunUpdateInput } }
   | { type: 'GET_MCP_SERVERS' }
   | { type: 'GET_MCP_SERVER'; payload: { id: McpServerId } }
   | { type: 'CREATE_MCP_SERVER'; payload: McpServerCreateInput }

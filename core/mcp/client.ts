@@ -4,6 +4,7 @@ import type {
   ToolDescriptor,
   ToolDescriptorSchema,
   ToolResult,
+  ToolRiskLevel,
   ToolTransportKind,
 } from '../tool/types';
 import type {
@@ -171,11 +172,12 @@ export function normalizeMcpToolDescriptor(server: McpServerConfig, tool: McpToo
     execution: {
       mode: server.execution.mode,
       enabled: server.enabled && server.execution.enabled,
-      risk: 'medium',
+      risk: toolRiskValue(tool.annotations?.risk),
       timeoutMs: server.timeouts.requestMs,
       maxResultBytes: server.limits.maxResultBytes,
     },
     annotations: {
+      ...stringAnnotations(tool.annotations),
       mcpServerId: server.id,
       mcpToolName: tool.name,
     },
@@ -272,11 +274,12 @@ function normalizeMcpToolResult(
   const limit = maxResultBytes ?? server.limits.maxResultBytes;
   const truncated = rendered.length > limit;
   const detail = truncated ? rendered.slice(0, limit) : rendered;
+  const errorMessage = result.isError ? extractMcpErrorMessage(result, detail) : undefined;
 
   return {
     ok: result.isError !== true,
     summary: result.isError ? 'MCP 工具返回错误' : 'MCP 工具已执行',
-    detail,
+    detail: result.isError ? (errorMessage || detail) : detail,
     name: call.name,
     provider: call.provider,
     descriptorId: call.descriptorId,
@@ -288,11 +291,30 @@ function normalizeMcpToolResult(
     error: result.isError
       ? {
         code: 'mcp_tool_result_error',
-        message: detail || 'MCP tool returned isError=true.',
+        message: errorMessage || detail || 'MCP tool returned isError=true.',
         retryable: false,
       }
       : undefined,
   };
+}
+
+function extractMcpErrorMessage(result: McpCallToolResult, fallback: string): string {
+  if (Array.isArray(result.content)) {
+    const textBlocks = result.content
+      .filter((block) => block.type === 'text' && typeof block.text === 'string')
+      .map((block) => (block as { text: string }).text);
+    if (textBlocks.length > 0) return textBlocks.join('\n');
+  }
+  if (result.structuredContent && typeof result.structuredContent === 'object') {
+    const sc = result.structuredContent as Record<string, unknown>;
+    if (typeof sc.message === 'string') return sc.message;
+    if (typeof sc.error === 'string') return sc.error;
+    if (sc.error && typeof sc.error === 'object') {
+      const err = sc.error as Record<string, unknown>;
+      if (typeof err.message === 'string') return err.message;
+    }
+  }
+  return fallback;
 }
 
 function normalizeToolOutput(result: McpCallToolResult): JsonValue {
@@ -331,6 +353,19 @@ function normalizeToolSchema(value: unknown): ToolDescriptorSchema {
       ? schema.properties as Record<string, JsonValue>
       : {},
   };
+}
+
+function toolRiskValue(value: unknown): ToolRiskLevel {
+  return value === 'low' || value === 'high' ? value : 'medium';
+}
+
+function stringAnnotations(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined && entry !== null)
+      .map(([key, entry]) => [key, typeof entry === 'string' ? entry : JSON.stringify(entry)]),
+  );
 }
 
 function clientInfoValue(value: unknown): { name: string; version: string } | undefined {

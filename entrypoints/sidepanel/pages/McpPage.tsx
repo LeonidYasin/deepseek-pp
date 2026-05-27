@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  OFFICECLI_MCP_ENDPOINT,
+  OFFICECLI_MCP_SERVER_NAME,
+  createOfficeCliMcpPresetInput,
+} from '../../../core/officecli';
 import type {
   McpHeaderValue,
   McpSecretValue,
@@ -42,8 +47,8 @@ const TRANSPORT_OPTIONS: { kind: McpTransportKind; label: string; hint: string }
   { kind: 'streamable_http', label: 'Streamable HTTP', hint: '推荐，兼容新版 MCP HTTP 服务' },
   { kind: 'http', label: 'HTTP', hint: 'JSON-RPC over HTTP POST' },
   { kind: 'sse', label: 'SSE', hint: '旧版 MCP SSE 传输' },
-  { kind: 'stdio_bridge', label: 'Stdio Bridge', hint: '本地桥接服务转发 stdio MCP' },
-  { kind: 'native_messaging', label: 'Native', hint: 'Browser Native Messaging Host' },
+  { kind: 'stdio_bridge', label: 'Stdio Bridge', hint: '本地桥接服务负责启动 stdio MCP 和文件访问边界' },
+  { kind: 'native_messaging', label: 'Native', hint: '通过 Browser Native Messaging Host 访问本机能力' },
 ];
 
 const DEFAULT_FORM: FormState = {
@@ -157,6 +162,31 @@ export default function McpPage() {
     setShowForm((prev) => !prev);
   };
 
+  const createOfficeCliPreset = async () => {
+    setMessage('');
+    const existing = servers.find((server) =>
+      server.displayName === OFFICECLI_MCP_SERVER_NAME ||
+      server.transport.url === OFFICECLI_MCP_ENDPOINT
+    );
+    if (existing) {
+      setSelectedId(existing.id);
+      setMessage('OfficeCLI MCP 已存在，已选中现有配置');
+      return;
+    }
+
+    const server: McpServerConfig | null = await chrome.runtime.sendMessage({
+      type: 'CREATE_MCP_SERVER',
+      payload: createOfficeCliMcpPresetInput(),
+    });
+    if (!server) {
+      setMessage('创建 OfficeCLI MCP 预设失败');
+      return;
+    }
+    setSelectedId(server.id);
+    setMessage(`已创建 OfficeCLI MCP 预设。启动本地 provider 后点击「测试」：npm run officecli:mcp -- --root <文档目录>`);
+    await load();
+  };
+
   const startEdit = (server: McpServerConfig) => {
     setEditing(server);
     setMessage('');
@@ -261,15 +291,23 @@ export default function McpPage() {
             {servers.length} 个服务，{enabledCount} 个启用，{toolCount} 个自动工具
           </div>
         </div>
-        <button
-          onClick={startCreate}
-          className="ds-btn-primary px-3 py-1.5 text-xs font-medium text-white rounded-lg transition-all duration-150 flex items-center gap-1"
-        >
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          新增
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={createOfficeCliPreset}
+            className="ds-btn-secondary px-3 py-1.5 text-xs rounded-lg transition-all duration-150"
+          >
+            OfficeCLI
+          </button>
+          <button
+            onClick={startCreate}
+            className="ds-btn-primary px-3 py-1.5 text-xs font-medium text-white rounded-lg transition-all duration-150 flex items-center gap-1"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            新增
+          </button>
+        </div>
       </div>
 
       {message && (
@@ -745,6 +783,10 @@ function ServerDetail({
         </div>
       )}
 
+      {isOfficeCliServer(server) && (
+        <OfficeCliSetupHint server={server} cache={cache} />
+      )}
+
       <div className="ds-card rounded-lg p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-medium" style={{ color: 'var(--ds-text)' }}>自动执行策略</span>
@@ -1133,6 +1175,52 @@ function statusMeta(status: McpServerStatus) {
   if (status === 'error') return { label: 'error', color: 'var(--ds-danger)', bg: 'var(--ds-danger-bg)' };
   if (status === 'disabled') return { label: 'disabled', color: 'var(--ds-text-tertiary)', bg: 'var(--ds-surface)' };
   return { label: 'unknown', color: 'var(--ds-text-secondary)', bg: 'var(--ds-surface)' };
+}
+
+function isOfficeCliServer(server: McpServerConfig): boolean {
+  return server.displayName === OFFICECLI_MCP_SERVER_NAME || server.transport.url === OFFICECLI_MCP_ENDPOINT;
+}
+
+function OfficeCliSetupHint({ server, cache }: { server: McpServerConfig; cache: McpToolCacheEntry | null }) {
+  const message = officeCliSetupMessage(server, cache);
+  return (
+    <div className="ds-card rounded-lg px-3 py-2 text-[11px] leading-4" style={{ color: 'var(--ds-text-secondary)' }}>
+      <div className="font-medium mb-1" style={{ color: 'var(--ds-text)' }}>OfficeCLI 本地 provider</div>
+      <div>{message}</div>
+      <div className="mt-1 font-mono break-all" style={{ color: 'var(--ds-text-tertiary)' }}>
+        npm run officecli:mcp -- --root &lt;文档目录&gt;
+      </div>
+      <div className="mt-1" style={{ color: 'var(--ds-text-tertiary)' }}>
+        默认只自动注入状态、读取、问题检查、验证和预览工具；创建和批量修改工具需要 provider 启用写入并在工具列表中手动放行。
+      </div>
+    </div>
+  );
+}
+
+function officeCliSetupMessage(server: McpServerConfig, cache: McpToolCacheEntry | null): string {
+  const error = `${cache?.health.error ?? ''} ${server.lastError ?? ''}`.toLowerCase();
+  if (error.includes('officecli_binary_missing') || error.includes('not found') || error.includes('enoent')) {
+    return '未找到 officecli，请先安装 OfficeCLI，或启动 provider 时用 --officecli 指定二进制路径。';
+  }
+  if (error.includes('officecli_path_denied') || error.includes('outside the configured')) {
+    return '文件路径不在允许根目录下，请用 --root 指定包含目标文档的目录后重启 provider。';
+  }
+  if (error.includes('officecli_write_disabled')) {
+    return '写入工具仍处于禁用状态；确认需要创建或修改文档后，用 --write enabled 重启 provider。';
+  }
+  if (
+    error.includes('failed to fetch') ||
+    error.includes('mcp_network_error') ||
+    error.includes('cannot reach mcp server') ||
+    error.includes('couldn') ||
+    error.includes('connection refused')
+  ) {
+    return `本地 OfficeCLI provider 没有响应。请先在仓库目录启动：npm run officecli:mcp -- --root <文档目录>，然后回到这里点「测试」。`;
+  }
+  if (cache?.health.status === 'ready') {
+    return `已连接到 ${server.transport.url ?? OFFICECLI_MCP_ENDPOINT}，发现 ${cache.health.toolCount} 个 OfficeCLI 工具。`;
+  }
+  return `先在本机启动 OfficeCLI provider，再授权并测试 ${server.transport.url ?? OFFICECLI_MCP_ENDPOINT}。`;
 }
 
 function transportLabel(kind: McpTransportKind): string {

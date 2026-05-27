@@ -12,7 +12,7 @@ export type ToolDescriptorId = string;
 
 export type ToolCallId = string;
 
-export type ToolExecutionTrigger = 'manual_chat' | 'automation' | 'test';
+export type ToolExecutionTrigger = 'manual_chat' | 'agent_run' | 'automation' | 'test';
 
 export type ToolExecutionMode = 'auto' | 'manual' | 'disabled';
 
@@ -65,9 +65,11 @@ export interface ToolDescriptor {
 export interface ToolCallSource {
   trigger: ToolExecutionTrigger;
   chatSessionId?: string | null;
+  taskId?: string;
+  runId?: string;
+  messageId?: number | null;
   automationId?: string;
   automationRunId?: string;
-  messageId?: number | null;
 }
 
 export interface ToolCall {
@@ -78,6 +80,7 @@ export interface ToolCall {
   invocationName?: string;
   payload: ToolPayload;
   raw: string;
+  parseError?: ToolError;
   source?: ToolCallSource;
   createdAt?: number;
 }
@@ -109,8 +112,8 @@ export interface ToolExecutionContext {
   trigger: ToolExecutionTrigger;
   requestId: string;
   chatSessionId?: string | null;
-  automationId?: string;
-  automationRunId?: string;
+  taskId?: string;
+  runId?: string;
   timeoutMs?: number;
   maxResultBytes?: number;
 }

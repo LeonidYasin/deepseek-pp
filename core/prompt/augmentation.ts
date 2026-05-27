@@ -80,7 +80,7 @@ function renderToolSchema(descriptor: ToolDescriptor, catalog: ToolInvocationCat
   return lines.filter(Boolean).join('\n');
 }
 
-function renderToolFormatReminder(descriptors: readonly ToolDescriptor[]): string {
+export function renderToolFormatReminder(descriptors: readonly ToolDescriptor[]): string {
   const catalog = createToolInvocationCatalog(descriptors);
   const names = catalog.invocationNames;
   if (names.length === 0) return '';

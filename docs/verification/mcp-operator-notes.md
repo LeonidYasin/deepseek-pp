@@ -41,11 +41,30 @@ After source changes:
 6. Click `刷新工具` to populate the cache.
 7. Confirm each tool's enabled state. Only tools with server `auto` policy and enabled tool state are injected into prompts.
 
+### OfficeCLI Provider
+
+OfficeCLI is exposed as a local Streamable HTTP MCP provider. The browser extension does not launch `officecli` directly and does not accept raw shell commands from a skill prompt.
+
+Start the provider:
+
+```bash
+npm run officecli:mcp -- --root /path/to/documents
+```
+
+Use `--root` repeatedly to allow multiple document folders. Only `.docx`, `.xlsx`, and `.pptx` inputs under those roots are accepted. The provider defaults to read-only behavior; mutation tools return `officecli_write_disabled` until the provider is restarted with:
+
+```bash
+npm run officecli:mcp -- --root /path/to/documents --write enabled
+```
+
+The sidepanel `OfficeCLI` quick-start creates a normal MCP server entry for `http://127.0.0.1:26316/mcp` with an allowlist that includes status, read, issue, validate, and preview tools only. `officecli_status` reports the active roots, relative path base, binary path, and write state so the model does not have to infer the local working directory. To create or batch-mutate documents, enable provider writes and manually allow `officecli_create_document` or `officecli_apply_edit_plan` in the discovered tool list.
+
 ### Verification Commands
 
 ```bash
 npm run verify:mcp:mock
 npm run smoke:mcp
+npm run smoke:officecli
 npm run compile
 npm run build:all
 ```
@@ -65,7 +84,14 @@ Use the printed URL as a Streamable HTTP MCP server in the sidepanel.
 - Discovery timeout: 20,000 ms by default.
 - Max result bytes: 64,000 by default.
 - Max tool count per server: 128 by default.
-- Manual and automation MCP continuations are capped at 3 rounds.
+- Manual chat MCP continuations are capped at 3 rounds; AgentRun continuations are capped at 8 tool loops.
+
+### Local Files
+
+- The extension does not read arbitrary local files or launch stdio MCP processes directly from the browser sandbox.
+- Filesystem tools must be exposed by a configured MCP server, Stdio Bridge, or Native Messaging host.
+- Keep filesystem MCP roots narrow, and prefer allowlisted project directories over full-disk access.
+- Tool call path arguments must still be valid JSON strings. Use `D:/project/file.txt` or escaped backslashes such as `D:\\project\\file.txt`.
 
 ### Troubleshooting
 
@@ -73,5 +99,13 @@ Use the printed URL as a Streamable HTTP MCP server in the sidepanel.
 - `mcp_endpoint_invalid`: use an `http://` or `https://` URL for browser transports.
 - `mcp_sse_endpoint_missing`: the SSE server did not emit the endpoint event expected by the legacy transport.
 - `mcp_native_host_unavailable`: install or fix the browser native messaging host manifest.
+- Local filesystem MCP returns permission errors: check the MCP server or bridge root allowlist. The browser extension cannot bypass that local policy.
+- Tool call is shown as a format error: verify the XML tag name is available and the body is a JSON object with escaped backslashes.
 - Tool is discovered but not injected: check server enabled state, execution mode, and per-tool allow/deny state.
+- Tool executes once but does not continue: verify the current DeepSeek page has the latest extension content script. Manual chat continuations reuse the AgentRun runner and may continue MCP tool calls for up to 3 rounds when tool schemas are still available; scheduled/manual Agent tasks may continue for up to 8 tool loops.
 - Stdio server does not start: verify the bridge process, command, args, cwd, and env. The extension itself does not launch stdio processes directly.
+- `officecli_binary_missing`: install OfficeCLI or start the provider with `--officecli /path/to/officecli`.
+- `officecli_path_denied`: restart the provider with a `--root` that contains the target document.
+- `officecli_write_disabled`: restart the provider with `--write enabled`, then explicitly allow the mutation tool in the sidepanel.
+- `officecli_file_locked`: close the document in other OfficeCLI resident/watch sessions or external editors, then retry.
+- Visible `<officecli_...>` text in the chat with no tool card means the current DeepSeek page did not execute that tag. Refresh the DeepSeek page after reloading the extension or refreshing MCP tools so the content script receives the latest tool descriptor list.

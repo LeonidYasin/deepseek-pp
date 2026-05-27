@@ -60,9 +60,9 @@ if (process.argv.includes('--serve')) {
 } else {
   try {
     await verifyManualContinuation();
-    await verifyAutomationContinuation();
+    await verifyAgentRunContinuation();
     console.log('mcp live mock: manual continuation ok');
-    console.log('mcp live mock: automation continuation/history ok');
+    console.log('mcp live mock: agent-run continuation/history ok');
     console.log(`mcp live mock: server ${url}`);
   } finally {
     await new Promise((resolve) => server.close(resolve));
@@ -76,41 +76,44 @@ async function verifyManualContinuation() {
   assert.equal(executions[0].result.ok, true);
   assert.equal(executions[0].result.output.echoed, 'manual');
 
-  const continuation = buildToolResultsPrompt(executions);
+  const continuation = buildToolResultsPrompt('Create a file and verify it.', executions);
   assert.match(continuation, /<tool_results>/);
+  assert.match(continuation, /<original_user_task>/);
+  assert.match(continuation, /Create a file and verify it/);
   assert.match(continuation, /manual/);
-  assert.match(continuation, /不要再调用任何工具/);
+  assert.match(continuation, /继续调用可用 MCP 工具/);
   assert.equal(executeToolCallsInManualContinuation(
     '<memory_save>{"type":"topic","name":"n","content":"c","tags":[]}</memory_save>',
   ).length, 0);
   assert.equal(stripToolCalls(assistantText).trim(), 'Need data.');
 }
 
-async function verifyAutomationContinuation() {
+async function verifyAgentRunContinuation() {
   const history = [];
-  let assistantText = `Run automation tool.\n<${INVOCATION_NAME}>{"text":"automation"}</${INVOCATION_NAME}>`;
+  let assistantText = `Run agent tool.\n<${INVOCATION_NAME}>{"text":"agent_run"}</${INVOCATION_NAME}>`;
   const allExecutions = [];
 
   for (let depth = 0; depth < 3; depth++) {
-    const executions = await executeToolCalls(assistantText, 'automation');
+    const executions = await executeToolCalls(assistantText, 'agent_run');
     if (executions.length === 0) break;
     allExecutions.push(...executions);
     history.push(...executions.map((execution) => ({
-      source: 'automation',
+      source: 'agent_run',
       call: execution.call,
       result: execution.result,
     })));
 
-    const continuation = buildToolResultsPrompt(executions);
-    assert.match(continuation, /automation/);
+    const continuation = buildToolResultsPrompt('Run agent run and produce the final answer.', executions);
+    assert.match(continuation, /<original_user_task>/);
+    assert.match(continuation, /agent run/);
     assistantText = 'Final answer after tool results.';
   }
 
   assert.equal(allExecutions.length, 1);
   assert.equal(history.length, 1);
-  assert.equal(history[0].source, 'automation');
+  assert.equal(history[0].source, 'agent_run');
   assert.equal(history[0].call.provider.kind, 'mcp');
-  assert.equal(history[0].result.output.echoed, 'automation');
+  assert.equal(history[0].result.output.echoed, 'agent_run');
 }
 
 async function executeToolCalls(text, trigger) {
@@ -165,7 +168,7 @@ async function callMcpTool(call) {
   };
 }
 
-function buildToolResultsPrompt(executions) {
+function buildToolResultsPrompt(originalTask, executions) {
   const lines = executions.map((execution, index) => JSON.stringify({
     index: index + 1,
     tool: execution.call.name,
@@ -175,9 +178,16 @@ function buildToolResultsPrompt(executions) {
     output: execution.result.output,
   }));
   return [
-    '以下是刚才自动执行的 MCP 工具结果。请基于这些结果继续回答用户。',
-    '这是最终回答续写轮次：不要再调用任何工具，不要输出任何 XML 工具标签，不要保存或更新记忆。',
-    '如果结果已经足够，请直接给出最终回答；如果结果不足，请说明缺少什么信息。',
+    '你现在是 DeepSeek++ 托管 Agent Runner，正在接管网页对话区的后续执行。',
+    '请持续围绕同一个原始用户任务推进，直到任务完成、达到可交付状态，或遇到不可恢复阻塞。',
+    '',
+    '<original_user_task>',
+    originalTask,
+    '</original_user_task>',
+    '',
+    '以下是刚才自动执行的 MCP 工具结果。请基于这些结果继续完成用户任务。',
+    '如果结果已经足够，请直接给出最终回答；只有确实需要更多信息、继续验证或继续修改文件时，才继续调用可用 MCP 工具。',
+    '不要输出伪工具调用 JSON；需要调用工具时只输出可执行 XML 工具标签。',
     '',
     '<tool_results>',
     lines.join('\n'),

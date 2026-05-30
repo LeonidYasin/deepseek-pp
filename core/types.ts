@@ -213,7 +213,8 @@ export type MessageAction =
   | { type: 'TOOL_CALL_EXECUTED'; payload: ToolCall }
   | { type: 'MEMORIES_UPDATED' }
   | { type: 'WEBDAV_TEST'; payload: Omit<SyncConfig, 'lastSyncAt'> }
-  | { type: 'WEBDAV_SYNC' }
+  | { type: 'WEBDAV_UPLOAD_LOCAL' }
+  | { type: 'WEBDAV_DOWNLOAD_REMOTE' }
   | { type: 'GET_SYNC_CONFIG' }
   | { type: 'SAVE_SYNC_CONFIG'; payload: SyncConfig }
   | { type: 'GET_BACKGROUND' }

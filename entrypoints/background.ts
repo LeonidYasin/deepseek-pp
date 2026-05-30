@@ -24,7 +24,6 @@ import { getPetConfig, savePetConfig, clearPetConfig } from '../core/pet/store';
 import { getExtensionVersion } from '../core/version';
 import { getSyncConfig, saveSyncConfig } from '../core/sync/config';
 import { webdavTest, webdavMkcol, webdavGet, webdavPut } from '../core/sync/webdav-client';
-import { mergeMemories, mergeSkills, mergePresets } from '../core/sync/merge';
 import { clearToolCallHistory, getToolCallHistory } from '../core/tool/history';
 import {
   executeRuntimeToolCall,
@@ -48,6 +47,18 @@ import type { McpServerCreateInput, McpServerUpdateInput } from '../core/mcp/typ
 const DEEPSEEK_HOME_URL = 'https://chat.deepseek.com/';
 type SidePanelApi = {
   setPanelBehavior?: (options: { openPanelOnActionClick: boolean }) => Promise<void>;
+};
+
+type SyncDataSnapshot = {
+  memories: Omit<Memory, 'id'>[];
+  skills: Skill[];
+  presets: SystemPromptPreset[];
+};
+
+type SyncCounts = {
+  memories: number;
+  skills: number;
+  presets: number;
 };
 
 export default defineBackground(() => {
@@ -90,12 +101,13 @@ function reportBackgroundStartupError(code: string, error: unknown) {
 function createBackgroundErrorResponse(
   message: { type?: string } | unknown,
   error: unknown,
-): ToolResult | null {
+): ToolResult | { ok: false; error: string } {
+  const detail = error instanceof Error ? error.message : String(error);
+
   if (!message || typeof message !== 'object' || (message as { type?: string }).type !== 'EXECUTE_TOOL_CALL') {
-    return null;
+    return { ok: false, error: detail };
   }
 
-  const detail = error instanceof Error ? error.message : String(error);
   return {
     ok: false,
     summary: '后台工具执行失败',
@@ -359,49 +371,37 @@ async function handleMessage(
       return { ok: true };
     }
 
-    case 'WEBDAV_SYNC': {
+    case 'WEBDAV_UPLOAD_LOCAL': {
       const config = await getSyncConfig();
       if (!config) throw new Error('未配置 WebDAV');
 
       await webdavMkcol(config);
 
-      const [localMemories, allSkills, localPresets] = await Promise.all([
-        getAllMemories(),
-        getAllSkills(),
-        getAllPresets(),
-      ]);
-      const localSkills = allSkills.filter((s) => s.source === 'custom');
+      const snapshot = await getLocalSyncDataSnapshot();
 
-      const [remoteMemJson, remoteSkillJson, remotePresetJson] = await Promise.all([
-        webdavGet(config, 'memories.json'),
-        webdavGet(config, 'skills.json'),
-        webdavGet(config, 'presets.json'),
-      ]);
+      await uploadSyncDataSnapshot(config, snapshot);
 
-      const remoteMemories: Memory[] = remoteMemJson ? JSON.parse(remoteMemJson) : [];
-      const remoteSkills: Skill[] = remoteSkillJson ? JSON.parse(remoteSkillJson) : [];
-      const remotePresets: SystemPromptPreset[] = remotePresetJson ? JSON.parse(remotePresetJson) : [];
+      const now = Date.now();
+      await saveSyncConfig({ ...config, lastSyncAt: now });
+      return { ok: true, lastSyncAt: now, counts: getSyncCounts(snapshot) };
+    }
 
-      const mergedMemories = mergeMemories(localMemories, remoteMemories);
-      const mergedSkills = mergeSkills(localSkills, remoteSkills);
-      const mergedPresets = mergePresets(localPresets, remotePresets);
+    case 'WEBDAV_DOWNLOAD_REMOTE': {
+      const config = await getSyncConfig();
+      if (!config) throw new Error('未配置 WebDAV');
+
+      const snapshot = await getRemoteSyncDataSnapshot(config);
 
       await Promise.all([
-        replaceAllMemories(mergedMemories),
-        replaceAllCustomSkills(mergedSkills),
-        replaceAllPresets(mergedPresets),
-      ]);
-
-      await Promise.all([
-        webdavPut(config, 'memories.json', JSON.stringify(mergedMemories)),
-        webdavPut(config, 'skills.json', JSON.stringify(mergedSkills)),
-        webdavPut(config, 'presets.json', JSON.stringify(mergedPresets)),
+        replaceAllMemories(snapshot.memories),
+        replaceAllCustomSkills(snapshot.skills),
+        replaceAllPresets(snapshot.presets),
       ]);
 
       const now = Date.now();
       await saveSyncConfig({ ...config, lastSyncAt: now });
       await broadcastStateUpdate(sender.tab?.id);
-      return { ok: true, lastSyncAt: now };
+      return { ok: true, lastSyncAt: now, counts: getSyncCounts(snapshot) };
     }
 
     default:
@@ -457,4 +457,74 @@ async function broadcastToolDescriptorsUpdate(excludeTabId?: number) {
 
 async function broadcastToolCallHistoryUpdate(excludeTabId?: number) {
   await broadcastToTabs({ type: 'TOOL_CALL_HISTORY_UPDATED' }, excludeTabId);
+}
+
+async function getLocalSyncDataSnapshot(): Promise<SyncDataSnapshot> {
+  const [memories, allSkills, presets] = await Promise.all([
+    getAllMemories(),
+    getAllSkills(),
+    getAllPresets(),
+  ]);
+
+  return {
+    memories: memories.map(({ id, ...memory }) => memory),
+    skills: allSkills.filter((skill) => skill.source === 'custom'),
+    presets,
+  };
+}
+
+async function uploadSyncDataSnapshot(config: SyncConfig, snapshot: SyncDataSnapshot): Promise<void> {
+  await Promise.all([
+    webdavPut(config, 'memories.json', JSON.stringify(snapshot.memories)),
+    webdavPut(config, 'skills.json', JSON.stringify(snapshot.skills)),
+    webdavPut(config, 'presets.json', JSON.stringify(snapshot.presets)),
+  ]);
+}
+
+async function getRemoteSyncDataSnapshot(config: SyncConfig): Promise<SyncDataSnapshot> {
+  const [remoteMemJson, remoteSkillJson, remotePresetJson] = await Promise.all([
+    webdavGetRequired(config, 'memories.json'),
+    webdavGetRequired(config, 'skills.json'),
+    webdavGetRequired(config, 'presets.json'),
+  ]);
+
+  const memories = parseRemoteArray<Memory>('memories.json', remoteMemJson)
+    .map(({ id, ...memory }) => memory);
+
+  return {
+    memories,
+    skills: parseRemoteArray<Skill>('skills.json', remoteSkillJson),
+    presets: parseRemoteArray<SystemPromptPreset>('presets.json', remotePresetJson),
+  };
+}
+
+async function webdavGetRequired(config: SyncConfig, file: string): Promise<string> {
+  const content = await webdavGet(config, file);
+  if (content === null) {
+    throw new Error(`云端缺少 ${file}，已停止下载以避免覆盖本地数据`);
+  }
+  return content;
+}
+
+function parseRemoteArray<T>(file: string, content: string): T[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(`云端 ${file} 不是有效 JSON，已停止下载`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(`云端 ${file} 格式错误，应为数组，已停止下载`);
+  }
+
+  return parsed as T[];
+}
+
+function getSyncCounts(snapshot: SyncDataSnapshot): SyncCounts {
+  return {
+    memories: snapshot.memories.length,
+    skills: snapshot.skills.length,
+    presets: snapshot.presets.length,
+  };
 }

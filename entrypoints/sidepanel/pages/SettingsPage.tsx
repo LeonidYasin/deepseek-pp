@@ -29,7 +29,13 @@ const DEFAULT_BACKGROUND_CONFIG: BackgroundConfig = {
   opacity: DEFAULT_BACKGROUND_OPACITY,
 };
 
-type SyncStatus = 'idle' | 'testing' | 'syncing' | 'success' | 'error';
+type SyncStatus = 'idle' | 'testing' | 'uploading' | 'downloading' | 'success' | 'error';
+
+type SyncCounts = {
+  memories: number;
+  skills: number;
+  presets: number;
+};
 
 export default function SettingsPage() {
   const [memoryCount, setMemoryCount] = useState(0);
@@ -53,6 +59,7 @@ export default function SettingsPage() {
   const petConfigRef = useRef<PetConfig>(DEFAULT_PET_CONFIG);
 
   const bgPreview = bgType === 'url' ? bgUrl : bgImageData;
+  const syncBusy = syncStatus === 'testing' || syncStatus === 'uploading' || syncStatus === 'downloading';
 
   const syncBgState = (config: BackgroundConfig) => {
     bgConfigRef.current = config;
@@ -271,7 +278,7 @@ export default function SettingsPage() {
   };
 
   const runSyncAction = async (
-    status: 'testing' | 'syncing',
+    status: 'testing' | 'uploading' | 'downloading',
     action: () => Promise<void>,
   ) => {
     if (!syncConfig.url) return;
@@ -294,26 +301,57 @@ export default function SettingsPage() {
     }
   };
 
+  const formatSyncCounts = (counts?: SyncCounts) => {
+    if (!counts) return '';
+    return `记忆 ${counts.memories} 条，Skill ${counts.skills} 个，预设 ${counts.presets} 个`;
+  };
+
   const handleTest = () =>
     runSyncAction('testing', async () => {
-      await chrome.runtime.sendMessage({ type: 'WEBDAV_TEST', payload: syncConfig });
-      setSyncStatus('success');
-      setSyncMessage('连接成功');
+      const result = await chrome.runtime.sendMessage({ type: 'WEBDAV_TEST', payload: syncConfig });
+      if (result?.ok) {
+        setSyncStatus('success');
+        setSyncMessage('连接成功');
+      } else {
+        throw new Error(result?.error || '连接失败');
+      }
     });
 
-  const handleSync = () =>
-    runSyncAction('syncing', async () => {
-      const result = await chrome.runtime.sendMessage({ type: 'WEBDAV_SYNC' });
+  const handleUploadLocal = () => {
+    if (!confirm('确定要用本地记忆、Skill 和预设覆盖云端数据吗？')) return;
+
+    void runSyncAction('uploading', async () => {
+      const result = await chrome.runtime.sendMessage({ type: 'WEBDAV_UPLOAD_LOCAL' });
       if (result?.ok) {
         setSyncConfig((prev) => ({ ...prev, lastSyncAt: result.lastSyncAt }));
         setSyncStatus('success');
-        setSyncMessage('同步完成');
-        const list: Memory[] = await chrome.runtime.sendMessage({ type: 'GET_MEMORIES' });
-        setMemoryCount(list?.length ?? 0);
+        setSyncMessage(`上传完成，已覆盖云端。${formatSyncCounts(result.counts)}`);
       } else {
-        throw new Error(result?.error || '同步失败');
+        throw new Error(result?.error || '上传失败');
       }
     });
+  };
+
+  const handleDownloadRemote = () => {
+    if (!confirm('确定要用云端记忆、Skill 和预设覆盖本地数据吗？此操作不可撤销。')) return;
+
+    void runSyncAction('downloading', async () => {
+      const result = await chrome.runtime.sendMessage({ type: 'WEBDAV_DOWNLOAD_REMOTE' });
+      if (result?.ok) {
+        setSyncConfig((prev) => ({ ...prev, lastSyncAt: result.lastSyncAt }));
+        setSyncStatus('success');
+        setSyncMessage(`下载完成，已覆盖本地。${formatSyncCounts(result.counts)}`);
+        if (result.counts) {
+          setMemoryCount(result.counts.memories);
+        } else {
+          const list: Memory[] = await chrome.runtime.sendMessage({ type: 'GET_MEMORIES' });
+          setMemoryCount(list?.length ?? 0);
+        }
+      } else {
+        throw new Error(result?.error || '下载失败');
+      }
+    });
+  };
 
   const handleExport = async () => {
     const memories: Memory[] = await chrome.runtime.sendMessage({ type: 'GET_MEMORIES' });
@@ -740,11 +778,11 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={handleTest}
-            disabled={!syncConfig.url || syncStatus === 'testing' || syncStatus === 'syncing'}
-            className="ds-btn-secondary flex-1 py-2.5 text-xs font-medium rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5 disabled:opacity-40"
+            disabled={!syncConfig.url || syncBusy}
+            className="ds-btn-secondary col-span-2 py-2.5 text-xs font-medium rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5 disabled:opacity-40"
           >
             {syncStatus === 'testing' ? (
               <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -756,27 +794,37 @@ export default function SettingsPage() {
             测试连接
           </button>
           <button
-            onClick={handleSync}
-            disabled={!syncConfig.url || syncStatus === 'testing' || syncStatus === 'syncing'}
-            className="ds-btn-secondary flex-1 py-2.5 text-xs font-medium rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5 disabled:opacity-40"
+            onClick={handleUploadLocal}
+            disabled={!syncConfig.url || syncBusy}
+            className="ds-btn-secondary py-2.5 text-xs font-medium rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5 disabled:opacity-40"
             style={
-              syncConfig.url && syncStatus !== 'testing' && syncStatus !== 'syncing'
+              syncConfig.url && !syncBusy
                 ? { background: 'var(--ds-blue)', color: 'var(--ds-text-on-primary)', borderColor: 'var(--ds-blue)' }
                 : undefined
             }
           >
-            {syncStatus === 'syncing' ? (
+            {syncStatus === 'uploading' ? (
               <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
             ) : (
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" d={SVG_PATHS.upload} />
               </svg>
             )}
-            立即同步
+            上传本地
+          </button>
+          <button
+            onClick={handleDownloadRemote}
+            disabled={!syncConfig.url || syncBusy}
+            className="ds-btn-secondary py-2.5 text-xs font-medium rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5 disabled:opacity-40"
+          >
+            {syncStatus === 'downloading' ? (
+              <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d={SVG_PATHS.download} />
+              </svg>
+            )}
+            下载云端
           </button>
         </div>
 

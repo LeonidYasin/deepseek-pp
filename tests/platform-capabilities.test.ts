@@ -1,0 +1,70 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createCapabilityMap,
+  getCurrentBrowserExtensionEnvironment,
+  getCurrentPlatformEnvironment,
+  isCapabilitySupported,
+} from '../core/platform';
+import { getSupportedMcpTransportKinds, isShellNativeHostSupported } from '../core/platform/gating';
+import type { PlatformEnvironment } from '../core/platform';
+import type { McpServerTransportConfig } from '../core/mcp/types';
+
+afterEach(() => {
+  delete (window as typeof window & { AndroidBridge?: unknown }).AndroidBridge;
+  vi.unstubAllGlobals();
+});
+
+describe('platform capability contracts', () => {
+  it('fills missing capability keys with false', () => {
+    const capabilities = createCapabilityMap({ storage: true });
+
+    expect(capabilities.storage).toBe(true);
+    expect(capabilities.nativeMessaging).toBe(false);
+    expect(capabilities.sidePanel).toBe(false);
+  });
+
+  it('detects browser extension capabilities from chrome APIs', () => {
+    vi.stubGlobal('chrome', {
+      runtime: {
+        id: 'extension-id',
+        sendMessage: vi.fn(),
+        getURL: vi.fn(),
+        connectNative: vi.fn(),
+      },
+      storage: { local: {} },
+      downloads: { download: vi.fn() },
+      sidePanel: {},
+      contextMenus: {},
+      alarms: {},
+    });
+
+    const environment = getCurrentBrowserExtensionEnvironment();
+
+    expect(environment.kind).toBe('browser_extension');
+    expect(isCapabilitySupported(environment, 'nativeMessaging')).toBe(true);
+    expect(isCapabilitySupported(environment, 'sidePanel')).toBe(true);
+  });
+
+  it('detects Android WebView as explicit non-native-messaging platform', () => {
+    (window as typeof window & { AndroidBridge?: unknown }).AndroidBridge = {};
+
+    const environment = getCurrentPlatformEnvironment();
+
+    expect(environment.kind).toBe('android_webview');
+    expect(environment.capabilities.storage).toBe(true);
+    expect(environment.capabilities.nativeMessaging).toBe(false);
+    expect(environment.capabilities.sidePanel).toBe(false);
+  });
+
+  it('filters native MCP controls when native messaging is unsupported', () => {
+    const environment: PlatformEnvironment = {
+      kind: 'android_webview',
+      name: 'Android WebView',
+      capabilities: createCapabilityMap({ storage: true, runtimeMessaging: true }),
+    };
+    const kinds: McpServerTransportConfig['kind'][] = ['streamable_http', 'native_messaging', 'stdio_bridge'];
+
+    expect(isShellNativeHostSupported(environment)).toBe(false);
+    expect(getSupportedMcpTransportKinds(kinds, environment)).toEqual(['streamable_http', 'stdio_bridge']);
+  });
+});

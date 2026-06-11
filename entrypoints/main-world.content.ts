@@ -12,6 +12,7 @@ import type {
   ToolDescriptor,
 } from '../core/types';
 import type { SkillPopupCopy, SkillPopupItem } from '../core/ui/skill-popup';
+import { validateBridgeMessage } from '../core/messaging/schema';
 
 const MAIN_WORLD_SOURCE = 'deepseek-pp-main';
 const CONTENT_SOURCE = 'deepseek-pp-content';
@@ -107,7 +108,9 @@ function stopBridgeRequests(): void {
 }
 
 function handlePortMessage(data: unknown): void {
-  const message = data && typeof data === 'object' ? data as AugmentResultMessage : {};
+  const validated = validateBridgeMessage(data, CONTENT_SOURCE);
+  if (!validated) return;
+  const message = validated as AugmentResultMessage;
   if (message.source !== CONTENT_SOURCE) return;
 
   switch (message.type) {

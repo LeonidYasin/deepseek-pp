@@ -46,6 +46,15 @@ export {
 } from './web-search';
 
 export {
+  ARTIFACT_TOOL_NAMES,
+  ARTIFACT_TOOL_PROVIDER,
+  createArtifactToolDescriptors,
+  executeArtifactToolCall,
+  isArtifactToolName,
+  type ArtifactToolName,
+} from '../artifact';
+
+export {
   DEFAULT_TOOL_DESCRIPTORS,
   createDefaultToolDescriptors,
   createToolCallFromInvocation,

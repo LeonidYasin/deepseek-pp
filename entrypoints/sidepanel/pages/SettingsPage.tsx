@@ -368,6 +368,8 @@ export default function SettingsPage() {
       memories: counts.memories,
       skills: counts.skills,
       presets: counts.presets,
+      projects: counts.projects,
+      projectFiles: counts.projectFiles,
     });
   };
 

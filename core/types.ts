@@ -4,6 +4,11 @@ import type {
   McpServerUpdateInput,
 } from './mcp/types';
 import type {
+  ProjectContextCreateInput,
+  ProjectContextState,
+  ProjectFileInput,
+} from './project/types';
+import type {
   ToolCall as GenericToolCall,
   ToolPayload,
   ToolProviderIdentity,
@@ -53,6 +58,38 @@ export type {
   ToolRiskLevel,
   ToolTransportKind,
 } from './tool/types';
+
+export type {
+  ProjectContext,
+  ProjectContextCreateInput,
+  ProjectContextState,
+  ProjectFile,
+  ProjectFileInput,
+  ProjectPromptContext,
+  ProjectRagChunk,
+  ProjectSource,
+  ProjectSourceKind,
+} from './project/types';
+
+export type {
+  ArtifactFile,
+  ArtifactKind,
+  ArtifactOutput,
+  ArtifactRecord,
+} from './artifact/types';
+
+export type {
+  PlatformCapability,
+  PlatformCapabilityMap,
+  PlatformDownload,
+  PlatformEnvironment,
+  PlatformFilePicker,
+  PlatformKind,
+  PlatformPickedFile,
+  PlatformRuntime,
+  PlatformServices,
+  PlatformStorage,
+} from './platform';
 
 export type MemoryType = 'user' | 'feedback' | 'topic' | 'reference';
 
@@ -118,6 +155,8 @@ export interface SyncCounts {
   memories: number;
   skills: number;
   presets: number;
+  projects: number;
+  projectFiles: number;
 }
 
 export type SkillSource = 'builtin' | 'official' | 'custom' | 'remote';
@@ -322,6 +361,16 @@ export type MessageAction =
   | { type: 'EXECUTE_TOOL_CALL'; payload: ToolCall }
   | { type: 'GET_TOOL_CALL_HISTORY'; payload?: { limit?: number } }
   | { type: 'CLEAR_TOOL_CALL_HISTORY' }
+  | { type: 'GET_PLATFORM_CAPABILITIES' }
+  | { type: 'GET_PROJECT_CONTEXT_STATE' }
+  | { type: 'CREATE_PROJECT_CONTEXT'; payload: ProjectContextCreateInput }
+  | { type: 'DELETE_PROJECT_CONTEXT'; payload: { projectId: string } }
+  | { type: 'SET_ACTIVE_PROJECT_CONTEXT'; payload: { projectId: string | null } }
+  | { type: 'ADD_PROJECT_FILES'; payload: { projectId: string; files: ProjectFileInput[] } }
+  | { type: 'SET_ACTIVE_PROJECT_FILES'; payload: { projectId: string; fileIds: string[] } }
+  | { type: 'GET_ACTIVE_PROJECT_CONTEXT'; payload: { query: string } }
+  | { type: 'IMPORT_GITHUB_PROJECT_CONTEXT'; payload: { projectId: string; url: string; token?: string } }
+  | { type: 'GET_ARTIFACT'; payload: { id: string } }
   | { type: 'GET_CONFIG' }
   | { type: 'GET_DEEPSEEK_THEME' }
   | { type: 'SET_DEEPSEEK_THEME'; payload: { theme: DeepSeekTheme } }

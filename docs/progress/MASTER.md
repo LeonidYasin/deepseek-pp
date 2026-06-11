@@ -1,15 +1,15 @@
-# Multilingual English Runtime Support — Progress Tracker
+# Better DeepSeek Capability Adoption — Progress Tracker
 
-> **Task**: Add first-class multilingual support to DeepSeek++, with English covering both user-facing UI and model-facing runtime behavior.
-> **Started**: 2026-06-10
-> **Last Updated**: 2026-06-10
+> **Task**: Incorporate high-value Better DeepSeek capabilities that DeepSeek++ does not currently support, with Android WebView support explicitly in scope.
+> **Started**: 2026-06-11
+> **Last Updated**: 2026-06-11
 > **Mode**: GITHUB_STANDARD
 > **Repo**: zhu1090093659/deepseek-pp
 
 ## GitHub Resources
 
 - **All Issues**: `gh issue list -R zhu1090093659/deepseek-pp --label "spec-driven" --state all`
-- **Current Spec Issues**: `gh issue list -R zhu1090093659/deepseek-pp --milestone "Phase 2: User-Facing Runtime UI" --state open`
+- **Current Spec Issues**: `gh issue list -R zhu1090093659/deepseek-pp --milestone "Phase 1: Foundation Contracts and Seams" --state open`
 - **Project Board**: unavailable in current `gh` auth scope; mode is `GITHUB_STANDARD`.
 
 ## References
@@ -25,47 +25,64 @@
 
 | Phase | Name | Milestone URL | Open | Closed | Total |
 |:--|:--|:--|--:|--:|--:|
-| 1 | I18n Foundation | https://github.com/zhu1090093659/deepseek-pp/milestone/26 | 0 | 3 | 3 |
-| 2 | User-Facing Runtime UI | https://github.com/zhu1090093659/deepseek-pp/milestone/27 | 0 | 4 | 4 |
-| 3 | Model-Facing English Behavior | https://github.com/zhu1090093659/deepseek-pp/milestone/28 | 0 | 4 | 4 |
-| 4 | Data, Sync, and Cross-Browser Compatibility | https://github.com/zhu1090093659/deepseek-pp/milestone/29 | 0 | 2 | 2 |
-| 5 | QA, Documentation, and Release Readiness | https://github.com/zhu1090093659/deepseek-pp/milestone/30 | 0 | 3 | 3 |
+| 1 | Foundation Contracts and Seams | https://github.com/zhu1090093659/deepseek-pp/milestone/31 | 5 | 0 | 5 |
+| 2 | P0 Project Context and Artifact Delivery | https://github.com/zhu1090093659/deepseek-pp/milestone/32 | 6 | 0 | 6 |
+| 3 | Android WebView Baseline | https://github.com/zhu1090093659/deepseek-pp/milestone/33 | 5 | 0 | 5 |
+| 4 | P1 Interactive Agent Tools | https://github.com/zhu1090093659/deepseek-pp/milestone/34 | 6 | 0 | 6 |
+| 5 | P2 Organization, Export, and Product Surfaces | https://github.com/zhu1090093659/deepseek-pp/milestone/35 | 5 | 0 | 5 |
+| 6 | Hardening, Documentation, and Release Readiness | https://github.com/zhu1090093659/deepseek-pp/milestone/36 | 3 | 0 | 3 |
+
+> GitHub open/closed counts reflect remote issue state. The P0 pass below has been implemented locally on `main`; GitHub Issues remain open until commit/push reconciliation.
 
 ## Issue Mapping
 
 | Task ID | Issue | Title | Status |
 |:--|:--|:--|:--|
-| T1.1 | #134 | Create typed locale contract and resources | closed |
-| T1.2 | #135 | Add locale resolution, preference storage, and accessors | closed |
-| T1.3 | #136 | Wire manifest localization assets | closed |
-| T2.1 | #137 | Migrate sidepanel shell and shared UI | closed |
-| T2.2 | #138 | Migrate Settings, Memory, Preset, Skill, and GitHub import pages | closed |
-| T2.3 | #139 | Migrate MCP, Tools, Automation, Chat, and Capabilities pages | closed |
-| T2.4 | #140 | Migrate content and background user-facing surfaces | closed |
-| T3.1 | #141 | Localize prompt augmentation and tool-call guidance | closed |
-| T3.2 | #142 | Localize local tool descriptors and result summaries | closed |
-| T3.3 | #143 | Add English builtin Skill behavior | closed |
-| T3.4 | #144 | Localize continuation, automation, and inline-agent model prompts | closed |
-| T4.1 | #145 | Guard persisted data and sync from translation | closed |
-| T4.2 | #146 | Verify cross-browser locale lifecycle behavior | closed |
-| T5.1 | #147 | Add i18n coverage audit | closed |
-| T5.2 | #148 | Update public docs and store-facing text | closed |
-| T5.3 | #149 | Run final validation chain | closed |
+| T1.1 | #152 | Define platform service contracts for storage, runtime messaging, downloads, file picking, asset URLs, and environment capabilities | implemented locally |
+| T1.2 | #153 | Add runtime bridge message schemas for MAIN/content/background/platform communication | implemented locally |
+| T1.3 | #154 | Define prompt context ordering contract for preset, Skill, memory, project context, and tool instructions | implemented locally |
+| T1.4 | #155 | Extract content card renderer registry from the large content entrypoint | implemented locally |
+| T1.5 | #156 | Add minimal browser e2e fixture harness for DOM injections | open |
+| T2.1 | #157 | Add Project and ProjectFile schemas, stores, migrations, and sync boundary rules | implemented locally |
+| T2.2 | #158 | Add GitHub repo, web page, and local folder source readers for project context | implemented locally |
+| T2.3 | #159 | Add project RAG retrieval and prompt injection budget integration | implemented locally |
+| T2.4 | #160 | Add Projects UI and attach menu for active project/files | implemented locally |
+| T2.5 | #161 | Add generated artifact local tool provider for single-file outputs | implemented locally |
+| T2.6 | #162 | Add multi-file project bundle workflow equivalent to LONG_WORK | implemented locally |
+| T3.1 | #163 | Add Android web-bundle build target and asset staging | implemented locally |
+| T3.2 | #164 | Add Kotlin WebView host, asset loader, cookie/login handling, and injection lifecycle | implemented locally; APK build blocked locally by missing JDK |
+| T3.3 | #165 | Implement Android bridge for storage, downloads, file/folder picking, theme, and locale | implemented locally |
+| T3.4 | #166 | Add Android capability gating for native messaging, Shell, sidePanel-only UI, and unsupported browser APIs | implemented locally |
+| T3.5 | #167 | Add Android test/CI documentation and smoke commands | open |
+| T4.1 | #168 | Add user-approved browser sandbox code runner for JS/TS/Python where available | open |
+| T4.2 | #169 | Add optional voice input and response read-aloud | open |
+| T4.3 | #170 | Add AI-assisted Skill creator tool with review-before-save | open |
+| T4.4 | #171 | Add memory import from another AI workflow | open |
+| T4.5 | #172 | Add saved items, bookmarks, and snippets with prompt insertion | open |
+| T4.6 | #173 | Add prompt injection controls: disable memory/system prompt, preset cadence, force response language | open |
+| T5.1 | #174 | Add chat tags, filtering, and history search adapters for DeepSeek sidebar | open |
+| T5.2 | #175 | Extend export to message-level, saved-item, and image outputs | open |
+| T5.3 | #176 | Add API playground behind explicit developer/user setting | open |
+| T5.4 | #177 | Add small UX polish: code block downloads, native navigation patch, local what's-new panel | open |
+| T5.5 | #178 | Decide custom CSS/theme preset policy; implement only if compatible with store/product posture | open |
+| T6.1 | #179 | Run and fix full validation matrix across compile, tests, prompt freeze, browser builds, smoke checks, and Android best-available checks | best-available local validation complete; Android Gradle blocked by missing JDK |
+| T6.2 | #180 | Update README, README_EN, store-facing docs, and Android install/developer docs | open |
+| T6.3 | #181 | Final progress reconciliation and archive preparation | open |
 
 ## Quick Status Commands
 
 ```bash
 # Phase progress
 gh api repos/zhu1090093659/deepseek-pp/milestones \
-  --jq '.[] | select(.number >= 26 and .number <= 30) | "\(.title): \(.open_issues) open, \(.closed_issues) closed"'
+  --jq '.[] | select(.number >= 31 and .number <= 36) | "\(.title): \(.open_issues) open, \(.closed_issues) closed"'
 
 # Open tasks for the active phase
 gh issue list -R zhu1090093659/deepseek-pp \
-  --milestone "Phase 1: I18n Foundation" \
+  --milestone "Phase 1: Foundation Contracts and Seams" \
   --state open \
   --json number,title
 
-# All current i18n spec tasks
+# All current spec tasks
 gh issue list -R zhu1090093659/deepseek-pp \
   --label "spec-driven" \
   --state all \
@@ -74,17 +91,38 @@ gh issue list -R zhu1090093659/deepseek-pp \
 
 ## Phase Checklist
 
-- [x] Phase 1: I18n Foundation (3/3 tasks) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/26)
-- [x] Phase 2: User-Facing Runtime UI (4/4 tasks) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/27)
-- [x] Phase 3: Model-Facing English Behavior (4/4 tasks) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/28)
-- [x] Phase 4: Data, Sync, and Cross-Browser Compatibility (2/2 tasks) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/29)
-- [x] Phase 5: QA, Documentation, and Release Readiness (3/3 tasks) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/30)
+- [x] Phase 1: Foundation Contracts and Seams (local P0 4/4 implemented; T1.5 remains P1) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/31)
+- [x] Phase 2: P0 Project Context and Artifact Delivery (local 6/6 implemented) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/32)
+- [x] Phase 3: Android WebView Baseline (local P0 4/4 implemented; APK validation blocked by missing JDK; T3.5 remains P1 docs/CI) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/33)
+- [ ] Phase 4: P1 Interactive Agent Tools (0/6 tasks) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/34)
+- [ ] Phase 5: P2 Organization, Export, and Product Surfaces (0/5 tasks) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/35)
+- [ ] Phase 6: Hardening, Documentation, and Release Readiness (0/3 tasks) — [milestone](https://github.com/zhu1090093659/deepseek-pp/milestone/36)
 
 ## Current Status
 
-**Active Phase**: Complete
-**Active Task**: None
-**Blockers**: None
+**Active Phase**: P0 local implementation complete; next user-requested pass should start P1.
+**Active Task**: Next pass begins with Phase 4 / T4.1 (#168) unless the user asks to reconcile/commit P0 first.
+**Blockers**: Android APK/Gradle validation is blocked on this machine because `java -version` reports no Java Runtime. `npm run android:assemble:debug` stops at the explicit JDK check.
+
+## Latest P0 Validation
+
+| Command | Result | Notes |
+|:--|:--|:--|
+| `npm run compile` | pass | TypeScript contracts compile |
+| `npm test` | pass | 18 test files, 84 tests |
+| `npm run prompt:freeze` | pass | Updated hash for intentional project-context prompt ordering |
+| `npm run verify:i18n` | pass | Locale parity and hardcoded Chinese audit pass |
+| `npm run verify:automation` | pass | Automation contract smoke pass |
+| `npm run smoke:pow` | pass | DeepSeek PoW smoke pass |
+| `npm run smoke:mcp` | pass | MCP descriptor/parser/timeout smoke pass |
+| `npm run verify:mcp:mock` | pass | Manual and automation continuation mock pass |
+| `npm run smoke:shell` | pass | 12 Shell host smoke checks pass |
+| `npm run build:android` | pass | Chrome MV3 build and Android asset staging pass |
+| `npm run build:all` | pass | Chrome, Edge, Firefox MV3 builds pass |
+| `npm run verify:manifest-policy` | pass | Manifest policy check pass |
+| `npm run audit:prod` | pass | 0 high production vulnerabilities |
+| `npm run android:assemble:debug` | blocked | Missing local JDK; APK not built |
+| `git diff --check` | pass | No whitespace errors |
 
 ## Governance Status
 
@@ -100,37 +138,20 @@ Per-task telemetry should be written to the corresponding GitHub Issue as commen
 
 ## Notes
 
-- GitHub issue gate requires the issue-form sections as `###` headings: `Issue type`, `Summary`, `Expected outcome`, `Details / reproduction`, and `Environment`. Issues #134-#149 were updated to that format and reopened after the first auto-close.
-- The repository already had an unrelated local deletion before this run: `audit-report-deepseek-pp-2026-06-05.html`. Do not revert it as part of i18n work.
-- First English release explicitly includes model-facing behavior, not only UI copy.
-- User-authored data must not be translated or mutated by locale changes.
-- Locale preference storage key is `deepseek_pp_locale_preference`. Resolution order is explicit preference, then browser language in `auto` mode, then `zh-CN` fallback.
-- WebExtension manifest localization uses `default_locale: 'en'`, `__MSG_extension_name__`, `__MSG_extension_description__`, and `__MSG_extension_action_title__`, with locale assets under `public/_locales/en/` and `public/_locales/zh_CN/`.
-- Prompt freeze now covers both prompt-generating functions and the bilingual prompt resource blocks in `core/i18n/resources/en.ts` and `core/i18n/resources/zh-CN.ts`; update `scripts/prompt-freeze.mjs` hashes whenever model-facing prompt resources intentionally change.
+- Better DeepSeek reference snapshot: `EdgeTypE/better-deepseek` commit `450168e` from 2026-06-09.
+- Do not copy Better DeepSeek's BDS tag system wholesale. New capabilities should map to DeepSeek++ ToolDescriptor, prompt augmentation, platform, and renderer contracts.
+- Android is in scope, but validation must be explicit: TypeScript tests, Gradle/Kotlin tests, APK build, and emulator/WebView smoke are separate evidence levels.
+- Previous active multilingual runtime support spec artifacts were complete and archived locally under `docs/archives/multilingual-english-runtime-support/`; milestones #26-#30 are closed.
 
 ## Next Steps
 
-1. Review and stage the multilingual runtime support branch when ready.
-2. Keep the unrelated local deletion `audit-report-deepseek-pp-2026-06-05.html` separate from this i18n work unless intentionally removed.
+1. Reconcile/commit P0 local implementation when ready.
+2. Install a local JDK before claiming Android APK validation.
+3. Continue with P1 tasks in Phase 4, starting from T4.1 (#168).
 
 ## Session Log
 
 | Date | Session | Summary |
 |:--|:--|:--|
-| 2026-06-10 | Planning | Completed analysis, confirmed English model behavior in scope, created plan docs, created GitHub Milestones #26-#30 and Issues #134-#149, and initialized this progress tracker. |
-| 2026-06-10 | Execution | Completed T1.1 / #134: added typed locale resources, translator helpers, interpolation, fallback metadata, array resources, parity tests, and compile validation. |
-| 2026-06-10 | Execution | Completed T1.2 / #135: added locale preference normalization, browser-language resolution, storage accessors, sidepanel provider/hook, and validation. |
-| 2026-06-10 | Execution | Completed T1.3 / #136: wired WebExtension manifest localization assets, updated validation scripts, built all browser targets, and passed manifest policy checks. |
-| 2026-06-10 | Execution | Completed T2.1 / #137: migrated sidepanel shell navigation/loading and shared card/form/import controls to locale resources, preserved user-authored data display, and passed i18n tests, compile, verify:i18n, and Chrome build. |
-| 2026-06-10 | Execution | Completed T2.2 / #138: migrated Settings, Memory, Preset, Skill, and GitHub import pages to locale resources, kept user-authored records and remote metadata untouched, and passed i18n tests, compile, and verify:i18n. |
-| 2026-06-10 | Execution | Completed T2.3 / #139: migrated MCP, Tools, Automation, Chat, and Capabilities pages to locale resources, kept MCP names/tool descriptors/commands/user prompts untouched, and passed i18n tests, compile, verify:i18n, and hardcoded-Chinese page scan. |
-| 2026-06-10 | Execution | Completed T2.4 / #140: migrated context menus, content export UI, permission banner, token speed title, tool blocks, inline-agent labels, pet lines, and background user-facing status text to locale resources; passed i18n tests, compile, verify:i18n, automation smoke, and MCP smoke. |
-| 2026-06-10 | Execution | Completed T3.1 / #141: localized prompt augmentation, web-search guidance, Shell/Python hints, tool format reminders, memory empty text, and Skill user-input wrappers; prompt-freeze now hashes bilingual prompt resources, and request/i18n tests, prompt-freeze, compile, and verify:i18n passed. |
-| 2026-06-10 | Execution | Completed T3.2 / #142: localized memory/web tool descriptors, schema descriptions, runtime summaries, validation errors, and unsupported-tool messages while preserving tool tags and schemas; passed memory/i18n tests, compile, verify:i18n, and hardcoded-Chinese core/tool scan. |
-| 2026-06-10 | Execution | Completed T3.3 / #143: added English builtin Skill descriptions and model instructions, kept canonical default skills plus official/custom/remote Skill content unchanged, refreshed runtime state on locale changes, and passed skill-localization/request tests, compile, and verify:i18n. |
-| 2026-06-10 | Execution | Completed T3.4 / #144: localized background/automation/inline-agent continuation, nudge, finalization, and max-step model prompts while keeping control tags stable; passed inline-agent/request/i18n tests, prompt-freeze, compile, verify:i18n, and MCP live mock. |
-| 2026-06-10 | Execution | Completed T4.1 / #145: added persisted-data i18n boundary tests for custom/remote skills, presets, scenarios, automation prompts, MCP URLs/headers/secrets, and WebDAV sync validators; passed persisted-data/skill/sync tests, compile, and verify:i18n. |
-| 2026-06-10 | Execution | Completed T4.2 / #146: extended verify:i18n with locale lifecycle/static checks, verified context-menu refresh and runtime state reload boundaries, and passed compile plus Chrome/Edge/Firefox builds and manifest policy checks. |
-| 2026-06-10 | Execution | Completed T5.1 / #147: added hardcoded-Chinese i18n coverage audit, wired it into verify:i18n, localized the Skill popup hint, documented intentional exceptions, and passed i18n audit, i18n tests, and compile. |
-| 2026-06-10 | Execution | Completed T5.2 / #148: updated README, README_EN, and Chrome Web Store copy for English/Simplified Chinese UI and model behavior, removed protocol-level store listing detail, and passed whitespace plus public-doc leakage checks. |
-| 2026-06-10 | Execution | Completed T5.3 / #149: ran final validation chain: verify:i18n, prompt:freeze, compile, targeted i18n/runtime tests, full Vitest suite, Chrome/Edge/Firefox builds, manifest policy, automation smoke, MCP mock smoke, MCP smoke, whitespace checks, and final diff review. |
+| 2026-06-11 | Planning | Archived completed multilingual runtime support artifacts, analyzed DeepSeek++ and Better DeepSeek, wrote analysis and plan docs, created GitHub Milestones #31-#36 and Issues #152-#181, and initialized this progress tracker. |
+| 2026-06-11 | P0 implementation | Implemented platform contracts, bridge schemas, prompt project-context ordering, renderer registry, Project Context/RAG, artifact file/zip tools, Projects UI, Android WebView scaffold, Android asset staging scripts, and capability gating. Validation passed except Android APK build, which is blocked by missing local JDK. |

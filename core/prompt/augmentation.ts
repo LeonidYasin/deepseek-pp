@@ -17,6 +17,7 @@ export interface PromptAugmentationOptions {
   thinkingEnabled?: boolean;
   identityOnly?: boolean;
   presetContent?: string | null;
+  projectContext?: string | null;
   toolDescriptors?: readonly ToolDescriptor[];
   locale?: SupportedLocale;
 }
@@ -36,6 +37,7 @@ export function buildPromptAugmentation(
     thinkingEnabled = false,
     identityOnly = false,
     presetContent = null,
+    projectContext = null,
     locale = DEFAULT_LOCALE,
   } = options ?? {};
   const toolDescriptors = options?.toolDescriptors ?? createDefaultToolDescriptors(locale);
@@ -52,6 +54,7 @@ export function buildPromptAugmentation(
   );
   const system = [
     baseSystem,
+    renderProjectContext(projectContext),
     renderWebSearchGuidance(toolDescriptors, locale),
   ].filter(Boolean).join('\n\n');
   const presetPrefix = presetContent ? `${presetContent}\n\n---\n\n` : '';
@@ -62,6 +65,11 @@ export function buildPromptAugmentation(
     usedMemoryIds: selected.map((memory) => memory.id!).filter(Boolean),
     renderedToolCount: toolDescriptors.length,
   };
+}
+
+function renderProjectContext(projectContext?: string | null): string {
+  const trimmed = typeof projectContext === 'string' ? projectContext.trim() : '';
+  return trimmed;
 }
 
 export function renderToolSchemas(

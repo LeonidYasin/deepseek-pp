@@ -52,6 +52,11 @@ import {
   getResolvedLocaleState,
   watchLocalePreference,
 } from '../core/i18n/store';
+import {
+  registerDefaultToolResultRenderers,
+  renderToolResultWithRegistry,
+} from '../core/ui/tool-result-renderer';
+import { validateBridgeMessage } from '../core/messaging/schema';
 
 import { createClientHeaders, rememberDeepSeekClientHeaders, saveClientHeadersToStorage } from '../core/deepseek/adapter';
 import type {
@@ -249,6 +254,7 @@ export default defineContentScript({
   matches: ['*://chat.deepseek.com/*'],
   runAt: 'document_start',
   async main() {
+    registerDefaultToolResultRenderers();
     await refreshContentLocale();
     watchLocalePreference(() => {
       void refreshContentLocale()
@@ -402,20 +408,21 @@ function connectMainWorldPort(): void {
 }
 
 async function handleMainWorldPortMessage(data: any): Promise<void> {
-  if (data?.source !== MAIN_WORLD_SOURCE) return;
+  const message = validateBridgeMessage(data, MAIN_WORLD_SOURCE);
+  if (!message) return;
 
-  if (data.type === BRIDGE_READY_TYPE) {
+  if (message.type === BRIDGE_READY_TYPE) {
     mainWorldBridgeReady = true;
     flushMainWorldMessages();
     return;
   }
 
-  if (data.type === 'AUGMENT_REQUEST_BODY') {
-    await handleAugmentRequestBody(data);
+  if (message.type === 'AUGMENT_REQUEST_BODY') {
+    await handleAugmentRequestBody(message);
     return;
   }
 
-  await mainWorldMessageHandler?.(data);
+  await mainWorldMessageHandler?.(message);
 }
 
 async function handleAugmentRequestBody(data: { id?: unknown; body?: unknown }): Promise<void> {
@@ -427,10 +434,12 @@ async function handleAugmentRequestBody(data: { id?: unknown; body?: unknown }):
       throw new Error('Request body must be a string.');
     }
 
+    const projectContext = await resolveProjectContextForRequestBody(data.body);
     const result = augmentRequestBody(data.body, {
       memories: currentMemories,
       skills: currentSkills,
       activePreset: currentActivePreset,
+      projectContext,
       modelType: currentModelType,
       toolDescriptors: currentToolDescriptors,
       messageCount: currentRequestMessageCount,
@@ -459,6 +468,21 @@ async function handleAugmentRequestBody(data: { id?: unknown; body?: unknown }):
       ok: false,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+}
+
+async function resolveProjectContextForRequestBody(bodyStr: string): Promise<string | null> {
+  try {
+    const body = JSON.parse(bodyStr) as { prompt?: unknown };
+    const query = typeof body.prompt === 'string' ? body.prompt : '';
+    if (!query.trim()) return null;
+    const context = await sendRuntimeMessage<string | null>({
+      type: 'GET_ACTIVE_PROJECT_CONTEXT',
+      payload: { query },
+    });
+    return context ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -3059,7 +3083,12 @@ function updateToolBlockContent(block: HTMLElement, executions: ToolExecutionRec
     if (detail) {
       const detailEl = document.createElement('div');
       detailEl.className = 'dpp-tool-block-item-detail';
-      detailEl.textContent = detail;
+      const rendered = renderToolResultWithRegistry({
+        target: detailEl,
+        result: exec.result,
+        sendMessage: sendRuntimeMessage,
+      });
+      if (!rendered) detailEl.textContent = detail;
       item.querySelector('.dpp-tool-block-item-text')!.appendChild(detailEl);
     }
     body.appendChild(item);

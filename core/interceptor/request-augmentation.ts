@@ -8,6 +8,7 @@ export interface RequestAugmentationState {
   memories: Memory[];
   skills: Array<Pick<Skill, 'name' | 'instructions' | 'memoryEnabled'>>;
   activePreset: SystemPromptPreset | null;
+  projectContext?: string | null;
   modelType: ModelType;
   toolDescriptors: readonly ToolDescriptor[];
   messageCount: number;
@@ -62,6 +63,7 @@ export function augmentRequestBody(
         thinkingEnabled,
         identityOnly: !resolved.memoryEnabled,
         presetContent,
+        projectContext: state.projectContext,
         toolDescriptors: state.toolDescriptors,
         locale,
       });
@@ -80,6 +82,7 @@ export function augmentRequestBody(
     memories: state.memories,
     thinkingEnabled,
     presetContent,
+    projectContext: state.projectContext,
     toolDescriptors: state.toolDescriptors,
     locale,
   });

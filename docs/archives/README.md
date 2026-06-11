@@ -57,3 +57,13 @@
 - GitHub repository: `zhu1090093659/deepseek-pp`
 - GitHub milestones: #21-#25
 - GitHub issues: #111-#130
+
+### multilingual-english-runtime-support
+
+- Description: First-class multilingual support for DeepSeek++, covering English/Simplified Chinese UI, model-facing prompt behavior, manifest localization, persisted-data boundaries, and release-readiness validation.
+- Date range: 2026-06-10 - 2026-06-10
+- Tracking mode: GITHUB_STANDARD
+- Archived progress: [MASTER.md](multilingual-english-runtime-support/progress/MASTER.md)
+- GitHub repository: `zhu1090093659/deepseek-pp`
+- GitHub milestones: #26-#30
+- GitHub issues: #134-#149

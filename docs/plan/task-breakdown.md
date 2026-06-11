@@ -1,140 +1,166 @@
 # Task Breakdown
 
-## Confirmed Task Definition
-
-DeepSeek++ will add first-class multilingual support, with English as the first additional runtime language. The first English release includes both user-facing extension UI and model-facing behavior: prompt augmentation, tool descriptors/result summaries, inline-agent continuation prompts, builtin Skill descriptions/instructions, context menus, manifest text, sidepanel UI, content-script injected UI, pet lines, and visible runtime errors/progress.
-
-Locale selection should support `auto | zh-CN | en`. `auto` resolves from browser language and falls back to `zh-CN`. User-authored data such as memories, presets, custom skills, imported skills, MCP configs, automation prompts, scenario labels, commands, URLs, and WebDAV snapshots must never be translated or mutated.
-
 ## Overview
 
-- **Total Phases**: 5
-- **Total Tasks**: 16
+- **Task definition**: Incorporate the high-value Better DeepSeek capabilities that DeepSeek++ does not currently support, with Android WebView support explicitly in scope.
+- **Total Phases**: 6
+- **Total Tasks**: 25
 - **Estimated Total Effort**: XL
-- **Tracking Mode**: GITHUB_STANDARD
+- **Tracking Mode**: `GITHUB_STANDARD`
+- **Confirmed Direction**: User delegated prioritization and explicitly called out Android as valuable. Execution still requires the Phase 5 confirmation checkpoint before implementation starts.
 
 ## S.U.P.E.R Design Constraints
 
-- **S (Single Purpose)**: Locale resolution, resource lookup, React integration, content/background usage, and model-facing prompt selection must be separate modules or helpers.
-- **U (Unidirectional Flow)**: UI/content/background/model builders consume a shared locale port. Locale resources must not import UI, background, or content implementation files.
-- **P (Ports over Implementation)**: Locale keys and resources must be typed. English and Chinese resources must pass parity tests. Cross-module I/O remains serializable.
-- **E (Environment-Agnostic)**: Locale resolution must work in sidepanel, background, content script, Chrome, Edge, and Firefox builds without assuming one global DOM or one browser-only API.
-- **R (Replaceable Parts)**: Adding a third language should primarily mean adding a resource object and locale messages, not editing every UI surface.
+- **S (Single Purpose)**: Do not add more responsibilities to `entrypoints/content.ts`, `core/interceptor/fetch-hook.ts`, `SettingsPage.tsx`, or `McpPage.tsx` without extracting focused modules first.
+- **U (Unidirectional Flow)**: Keep flow as platform adapter -> runtime contract -> core service -> UI renderer. Android-specific behavior must not import browser-only concrete implementations.
+- **P (Ports over Implementation)**: Define TypeScript contracts and schemas before implementing project context, artifacts, Android bridge, saved items, voice, and sandbox execution.
+- **E (Environment-Agnostic)**: Browser extension, Android WebView, and native messaging are separate platform capabilities. Unsupported combinations must be explicit, visible, and tested.
+- **R (Replaceable Parts)**: New capabilities should be replaceable through providers/adapters: project sources, artifact writers, platform services, sandbox runners, and voice engines.
 
 ## Testing and Governance Constraints
 
 - Feature work must add or update automated tests.
-- Locale resource parity and resolver behavior are mandatory tests.
-- Model-facing text changes must update prompt-freeze coverage or the equivalent deterministic guard.
-- Public documentation must stay user-facing and not expose internal API/protocol details.
-- Stable i18n invariants discovered during implementation should be recorded in the resolved native memory surface after execution.
+- Prompt/tool behavior changes must update `prompt:freeze` intentionally.
+- Persisted data changes must update schema tests and WebDAV sync boundary tests.
+- Android validation must distinguish TypeScript unit tests, Gradle/Kotlin tests, APK build, and emulator/WebView smoke. Do not report Android as validated when the required toolchain is missing.
+- Durable implementation rules go to the resolved native memory surface; future-agent rules must be reflected through the canonical instruction sync source, not by hand-editing generated `AGENTS.md`.
 
-## Phase 1: I18n Foundation
+## Phase 1: Foundation Contracts and Seams
 
-**Goal**: Establish the single localization port and browser packaging foundation before touching feature surfaces.
-
-**Prerequisite**: Phase 1 analysis complete; scope includes English model behavior.
-
-**S.U.P.E.R Focus**: P, U, R
+**Goal**: Establish the architectural ports needed before adding Better-style capabilities.
+**Prerequisite**: Phase 1 analysis documents complete.
+**S.U.P.E.R Focus**: P, E, R.
 
 | # | Task | Priority | Effort | Depends On | Lane | S.U.P.E.R | Test Expectation | Memory Impact | Acceptance Criteria |
 |:--|:--|:--|:--|:--|:--|:--|:--|:--|:--|
-| T1.1 | Create typed locale contract, `zh-CN` and `en` resource roots, translator helpers, interpolation, fallback behavior, and resource parity tests. | P0 | M | - | A | P, R | Add unit tests for locale resolution, fallback, interpolation, and key parity. | Record durable i18n contract if final shape changes future work. | `zh-CN` and `en` resources compile; missing keys fail tests; fallback is explicit and observable. |
-| T1.2 | Add runtime locale resolution and preference persistence for `auto | zh-CN | en`, with React and non-React accessors. | P0 | M | T1.1 | A | U, E, R | Add unit tests for preference normalization and browser-language resolution. | Record storage key and resolution order if stable. | Sidepanel, content script, and background can request the same resolved locale without duplicating logic. |
-| T1.3 | Add extension manifest localization assets and WXT manifest wiring for name, description, and action title. | P1 | S | T1.1 | B | P, E | Add static validation for `_locales` messages and run affected browser build check when feasible. | None unless WXT packaging gotcha emerges. | Chrome/Edge/Firefox manifest generation keeps existing permissions/settings and uses locale message keys where supported. |
+| T1.1 | Define platform service contracts for storage, runtime messaging, downloads, file picking, asset URLs, and environment capabilities | P0 | M | - | A | P,E,R | Unit tests for browser adapter and capability detection | Record platform capability invariant if accepted | Contracts live under a focused module; browser implementation preserves existing behavior; unsupported capabilities are explicit |
+| T1.2 | Add runtime bridge message schemas for MAIN/content/background/platform communication | P0 | M | - | B | P,U | Unit tests for schema accept/reject cases | Record bridge schema convention | Bridge messages are typed and validated; existing request augmentation and tool restore paths still compile and test |
+| T1.3 | Define prompt context ordering contract for preset, Skill, memory, project context, and tool instructions | P0 | M | - | C | P,U | Request augmentation tests plus prompt-freeze update | Record prompt ordering invariant | Project context can be inserted later without changing memory/Skill semantics; prompt-freeze catches model-facing drift |
+| T1.4 | Extract content card renderer registry from the large content entrypoint | P0 | M | T1.2 | D | S,R | Tests for renderer registration and existing tool block rendering | None unless renderer convention becomes durable | Existing tool cards, export action, and inline agent traces keep behavior; new cards can register without editing unrelated content logic |
+| T1.5 | Add minimal browser e2e fixture harness for DOM injections | P1 | M | T1.2,T1.4 | E | P,E | Playwright or equivalent fixture test for content injection against mock DeepSeek DOM | Record e2e command if adopted | Test harness exercises at least one content script card and one request augmentation path |
 
 ### Parallel Lanes
 
 | Lane | Tasks | Combined Effort | Merge Risk | Key Files |
 |:--|:--|:--|:--|:--|
-| A | T1.1, T1.2 | M+M | Medium | `core/i18n/**`, `tests/i18n*.test.ts` |
-| B | T1.3 | S | Low after T1.1 key names settle | `wxt.config.ts`, `public/_locales/**` or WXT-supported locale asset path |
+| A | T1.1 | M | Medium | `core/platform/*`, `core/browser/*` |
+| B | T1.2 | M | Medium | `core/messaging.ts`, `entrypoints/*` |
+| C | T1.3 | M | Medium | `core/prompt/*`, `core/interceptor/request-augmentation.ts`, tests |
+| D | T1.4 | M | High | `entrypoints/content.ts`, `core/ui/*` |
+| E | T1.5 | M | Low | `tests/e2e/*`, fixtures |
 
-## Phase 2: User-Facing Runtime UI
+## Phase 2: P0 Project Context and Artifact Delivery
 
-**Goal**: Migrate static extension UI and injected host-page UI to the shared i18n port.
-
-**Prerequisite**: Phase 1 complete.
-
-**S.U.P.E.R Focus**: S, U, P, R
+**Goal**: Add the highest-value Better DeepSeek workflows that directly improve agentic work: repository/folder context, RAG, and downloadable generated outputs.
+**Prerequisite**: Phase 1 contracts complete.
+**S.U.P.E.R Focus**: S, P, R.
 
 | # | Task | Priority | Effort | Depends On | Lane | S.U.P.E.R | Test Expectation | Memory Impact | Acceptance Criteria |
 |:--|:--|:--|:--|:--|:--|:--|:--|:--|:--|
-| T2.1 | Migrate sidepanel shell, navigation, loading states, shared form/card controls, and shared aria/title text. | P0 | M | T1.2 | A | U, P, R | Add/adjust React or pure rendering tests where practical; otherwise locale key parity plus compile. | None. | Navigation and shared controls render English under `en` and Chinese under `zh-CN`. |
-| T2.2 | Migrate Settings, Memory, Preset, Skill, and GitHub Skill import pages without translating user-authored data. | P0 | L | T2.1 | A | S, P, R | Add targeted tests for locale strings and non-translation boundaries where pure helpers exist. | Record non-translation invariant if not already in progress docs. | Feature pages use locale keys for static copy; stored values remain untouched. |
-| T2.3 | Migrate MCP, Tools, Automation, Chat, Capabilities pages and runtime status/error text surfaced in sidepanel. | P0 | L | T2.1 | B | S, P, R | Add targeted tests for status helpers and deterministic locale selection; update existing smoke assertions. | None. | Tool/MCP/automation UI shows English static copy and keeps external tool/server names unchanged. |
-| T2.4 | Migrate content/background user-facing surfaces: context menus, export menu/toasts/progress, tool blocks, Agent step labels, permission prompts, Python labels, token speed titles, and pet lines. | P0 | L | T1.2 | C | S, U, P, R | Add unit tests for text helpers where extractable; update smoke assertions that expect Chinese labels. | Record any content-script i18n helper pattern if durable. | Injected DeepSeek page UI and context menus resolve language consistently with the chosen locale. |
+| T2.1 | Add Project and ProjectFile schemas, stores, migrations, and sync boundary rules | P0 | M | T1.1,T1.3 | A | P,E | Store/schema/sync tests | Record project sync boundary | Project metadata and files have explicit schemas; secrets/local file contents are not synced silently |
+| T2.2 | Add GitHub repo, web page, and local folder source readers for project context | P0 | L | T2.1 | A | S,P,E | Fixture tests for GitHub URLs, branch fallback, binary filtering, size limits, `.gitignore`, and errors | Record source-reader limits | Public/private GitHub and folder flows produce normalized project files with bounded size and clear failures |
+| T2.3 | Add project RAG retrieval and prompt injection budget integration | P0 | M | T1.3,T2.1 | B | P,U,R | Retrieval ranking tests and request augmentation tests | Record prompt budget behavior | Relevant project chunks inject after Skill/preset ordering contract without starving memory/tool instructions |
+| T2.4 | Add Projects UI and attach menu for active project/files | P0 | L | T2.1,T2.2,T2.3 | C | S,R | Component/store tests and e2e fixture coverage if harness exists | None | Users can create projects, import sources, select active files, and see injection status |
+| T2.5 | Add generated artifact local tool provider for single-file outputs | P0 | M | T1.2,T1.4 | D | P,R | Tool parser/runtime tests and content card tests | Record artifact safety limits | Model can request a downloadable file through the existing ToolDescriptor path; file names, MIME, and size are validated |
+| T2.6 | Add multi-file project bundle workflow equivalent to LONG_WORK | P0 | L | T2.5 | D | S,P,R | Bundle tests, card restore tests, prompt-freeze update | Record artifact bundle contract | Multiple generated files are collected into a zip with visible progress and no raw technical tag leakage |
 
 ### Parallel Lanes
 
 | Lane | Tasks | Combined Effort | Merge Risk | Key Files |
 |:--|:--|:--|:--|:--|
-| A | T2.1, T2.2 | M+L | Medium | `entrypoints/sidepanel/App.tsx`, shared components, Settings/Memory/Preset/Skill pages |
-| B | T2.3 | L | Medium | MCP/Tools/Automation/Chat/Capabilities pages |
-| C | T2.4 | L | High | `entrypoints/content.ts`, `entrypoints/background.ts`, `core/pet/lines.ts` |
+| A | T2.1, T2.2 | L | Medium | `core/project/*`, source readers, sync tests |
+| B | T2.3 | M | Medium | `core/prompt/*`, `core/project/rag*`, tests |
+| C | T2.4 | L | Medium | `entrypoints/sidepanel/pages/*`, new components |
+| D | T2.5, T2.6 | L | High | `core/tool/*`, card renderer registry, content cards |
 
-## Phase 3: Model-Facing English Behavior
+## Phase 3: Android WebView Baseline
 
-**Goal**: Make model-facing behavior locale-aware so English runtime mode produces English instructions, tool contracts, summaries, and builtin Skill behavior.
-
-**Prerequisite**: Phase 1 complete; Phase 2 can proceed in parallel for independent UI files, but final validation depends on both.
-
-**S.U.P.E.R Focus**: P, E, R
+**Goal**: Make DeepSeek++ run as an Android WebView app with explicit capability boundaries.
+**Prerequisite**: Phase 1 platform ports complete. Phase 2 may run partly in parallel, but Android feature parity work depends on stable adapters.
+**S.U.P.E.R Focus**: E, P, R.
 
 | # | Task | Priority | Effort | Depends On | Lane | S.U.P.E.R | Test Expectation | Memory Impact | Acceptance Criteria |
 |:--|:--|:--|:--|:--|:--|:--|:--|:--|:--|
-| T3.1 | Make prompt augmentation and web/search/tool-call guidance locale-aware, including prompt-freeze updates for both Chinese and English variants. | P0 | M | T1.2 | A | P, R | Update prompt-freeze fixtures and add unit tests for locale-specific prompt output. | Record prompt-freeze/i18n invariant if stable. | English mode emits English model instructions while preserving executable XML format rules. |
-| T3.2 | Localize local tool descriptors, schema descriptions, result summaries, and runtime parse/unsupported-tool errors. | P0 | M | T1.2 | B | P, R | Update memory/web tool tests for English and Chinese summaries/descriptors. | None. | Tool descriptors and model-visible result summaries match resolved locale without changing tool names or schemas. |
-| T3.3 | Add English variants for builtin Skill descriptions/instructions and select display/model text by locale. | P0 | L | T1.2 | C | P, R | Add tests for builtin skill lookup, locale selection, and no mutation of custom/remote skills. | Record builtin skill localization boundary if stable. | Builtin skills have English descriptions/instructions in English mode; custom and remote skills remain as authored/imported. |
-| T3.4 | Localize background chat/tool-loop continuation prompts, automation model prompts, inline-agent continuation/nudge/finalization prompts, and max-step termination messages. | P0 | M | T1.2 | D | P, E, R | Add/update unit tests for inline-agent prompt builders and background-extracted helpers where feasible. | None. | English mode uses English continuation/nudge/finalization behavior without breaking loop control tags. |
+| T3.1 | Add Android web-bundle build target and asset staging | P0 | M | T1.1 | A | E,R | Build script tests or smoke script; compile/build target | Record Android build commands | `npm run build:android` produces staged JS/CSS/assets without changing browser builds |
+| T3.2 | Add Kotlin WebView host, asset loader, cookie/login handling, and injection lifecycle | P0 | L | T3.1 | A | E,P | Gradle assemble where toolchain exists; Kotlin unit tests for pure helpers | Record validation caveats | WebView loads DeepSeek, injects bundled scripts, preserves cookies, and handles back navigation |
+| T3.3 | Implement Android bridge for storage, downloads, file/folder picking, theme, and locale | P0 | L | T1.1,T3.2 | B | P,E,R | Kotlin unit tests + TypeScript adapter tests | Record bridge security invariant | Android platform adapter passes existing storage/runtime tests; downloads and pickers have clear user-visible errors |
+| T3.4 | Add Android capability gating for native messaging, Shell, sidePanel-only UI, and unsupported browser APIs | P0 | M | T3.3 | C | E,R | Capability matrix tests | Record unsupported-capability rule | Android does not show false-ready controls for Shell/native messaging; unsupported features fail loudly and visibly |
+| T3.5 | Add Android test/CI documentation and smoke commands | P1 | M | T3.1,T3.2,T3.3,T3.4 | D | P,E | Documented commands plus best available local validation | Record Android validation matrix | README/developer docs state toolchain, commands, outputs, and what was actually validated |
 
 ### Parallel Lanes
 
 | Lane | Tasks | Combined Effort | Merge Risk | Key Files |
 |:--|:--|:--|:--|:--|
-| A | T3.1 | M | Medium | `core/prompt/**`, prompt freeze scripts/fixtures |
-| B | T3.2 | M | Medium | `core/tool/**`, `tests/memory-tool.test.ts` |
-| C | T3.3 | L | Medium | `core/skill/builtin.ts`, `core/skill/registry.ts` |
-| D | T3.4 | M | Medium | `entrypoints/background.ts`, `core/inline-agent/prompt.ts`, `core/automation/**` |
+| A | T3.1, T3.2 | L | Medium | `android/*`, build scripts |
+| B | T3.3 | L | Medium | `android/*`, `core/platform/*` |
+| C | T3.4 | M | Medium | capability stores/UI |
+| D | T3.5 | M | Low | docs, scripts |
 
-## Phase 4: Data, Sync, and Cross-Browser Compatibility
+## Phase 4: P1 Interactive Agent Tools
 
-**Goal**: Ensure localization does not corrupt user data and works across supported browser targets.
-
-**Prerequisite**: Phases 1-3 implemented enough to exercise runtime language paths.
-
-**S.U.P.E.R Focus**: E, R, P
+**Goal**: Add the next tier of Better DeepSeek capabilities that improve day-to-day interaction but depend on the P0 contracts.
+**Prerequisite**: Phase 1 complete; individual tasks may depend on Phase 2/3 outputs.
+**S.U.P.E.R Focus**: S, P, E.
 
 | # | Task | Priority | Effort | Depends On | Lane | S.U.P.E.R | Test Expectation | Memory Impact | Acceptance Criteria |
 |:--|:--|:--|:--|:--|:--|:--|:--|:--|:--|
-| T4.1 | Add non-translation guards around persisted user data and WebDAV sync boundaries. | P0 | M | T2.2, T3.3 | A | P, E | Add tests proving memories, custom skills, imported skills, presets, scenarios, MCP configs, automation prompts, URLs, and commands are not transformed by locale changes. | Record invariant if stable. | Switching locale changes static UI/model scaffolding only, never stored user content. |
-| T4.2 | Verify locale behavior for Chrome, Edge, Firefox, context-menu refresh, content/background lifecycle, and settings changes. | P1 | M | T2.4, T3.4 | B | E, R | Run targeted build checks and add smoke/static checks for context-menu recreation and manifest locale assets. | Record browser-specific gotchas if discovered. | Existing multi-browser manifest differences remain intact and locale changes do not require extension reload except where browser APIs require it. |
+| T4.1 | Add user-approved browser sandbox code runner for JS/TS/Python where available | P1 | L | T1.1,T1.4,T2.5 | A | P,E | Sandbox tests, approval tests, output-limit tests | Record no-silent-exec invariant | Code never runs without user action; output returns to the chat through a typed tool result |
+| T4.2 | Add optional voice input and response read-aloud | P1 | M | T1.1 | B | S,E | Adapter tests with unsupported browser fallback | None | Users can enable STT/TTS where platform supports it; unsupported platforms show explicit state |
+| T4.3 | Add AI-assisted Skill creator tool with review-before-save | P1 | M | T1.2,T2.5 | C | P,U | Tool/runtime/Skill registry tests | Record review-before-save rule if accepted | Model-created skills enter existing custom Skill registry only after user review and name validation |
+| T4.4 | Add memory import from another AI workflow | P1 | M | T1.3 | C | P,U | Parser/schema/memory store tests | Record import format if durable | Imported profile text is converted into typed memories with preview, dedupe, and no automatic prompt mutation |
+| T4.5 | Add saved items, bookmarks, and snippets with prompt insertion | P1 | M | T1.1 | D | S,P | Store/component tests and sync boundary tests | Record saved-item sync rule | Users can save messages/snippets, search them, and insert snippets into the prompt without mutating original chats |
+| T4.6 | Add prompt injection controls: disable memory/system prompt, preset cadence, force response language | P1 | M | T1.3 | E | P,U | Request augmentation tests and prompt-freeze update | Record prompt-control semantics | Controls are explicit, persisted, localized, and reflected in model-facing prompt tests |
 
 ### Parallel Lanes
 
 | Lane | Tasks | Combined Effort | Merge Risk | Key Files |
 |:--|:--|:--|:--|:--|
-| A | T4.1 | M | Medium | storage/sync/skill tests |
-| B | T4.2 | M | Low | `wxt.config.ts`, background/content lifecycle helpers, build scripts |
+| A | T4.1 | L | High | sandbox, tool runtime, renderer cards |
+| B | T4.2 | M | Low | `core/voice/*`, settings UI |
+| C | T4.3, T4.4 | M | Medium | `core/skill/*`, `core/memory/*`, tool provider |
+| D | T4.5 | M | Medium | `core/saved-items/*`, sidepanel UI |
+| E | T4.6 | M | Medium | prompt/settings/i18n tests |
 
-## Phase 5: QA, Documentation, and Release Readiness
+## Phase 5: P2 Organization, Export, and Product Surfaces
 
-**Goal**: Close the first English release with deterministic validation and public-facing docs.
-
-**Prerequisite**: Phases 1-4 complete.
-
-**S.U.P.E.R Focus**: P, E, R
+**Goal**: Add lower-priority Better DeepSeek features once the core agentic and Android work is stable.
+**Prerequisite**: P0 phases complete.
+**S.U.P.E.R Focus**: S, R.
 
 | # | Task | Priority | Effort | Depends On | Lane | S.U.P.E.R | Test Expectation | Memory Impact | Acceptance Criteria |
 |:--|:--|:--|:--|:--|:--|:--|:--|:--|:--|
-| T5.1 | Add an i18n coverage audit that catches missing English keys and obvious hardcoded Chinese in English-targeted static surfaces, with allowlists for user data, docs, fixtures, and Chinese resources. | P0 | M | T2.4, T3.4 | A | P, R | Add script or Vitest coverage check and run it in targeted validation. | Record audit command if stable. | English-targeted static surfaces have automated coverage and intentional exceptions are explicit. |
-| T5.2 | Update public-facing docs and Chrome Web Store text to mention English UI/model behavior support without exposing internal implementation details. | P1 | S | T5.1 | B | S, E | Docs-only validation: `git diff --check` and grep checks for implementation leakage. | None. | README/README_EN and store-facing docs describe user-visible multilingual support consistently. |
-| T5.3 | Run final validation chain: targeted unit tests, `npm run compile`, affected builds, and the smallest relevant smoke checks. | P0 | M | T5.1, T5.2 | C | E, R | Run and record validation results; explain any skipped checks. | Record reusable command sequence if final. | The implementation passes deterministic tests and build checks required for the English runtime release. |
+| T5.1 | Add chat tags, filtering, and history search adapters for DeepSeek sidebar | P2 | L | T1.5 | A | S,E | DOM fixture/e2e tests | Record DOM adapter assumptions | Tags/search are isolated from official export and fail visibly if DeepSeek DOM changes |
+| T5.2 | Extend export to message-level, saved-item, and image outputs | P2 | M | T4.5 | B | P,R | Export schema/artifact tests | None | Existing official export remains compatible; new formats are optional and clearly labeled |
+| T5.3 | Add API playground behind explicit developer/user setting | P2 | M | T1.1 | C | S,P | API key boundary tests and UI tests | Record API key storage rule if needed | Playground uses existing API key boundaries and never leaks keys into sync/export |
+| T5.4 | Add small UX polish: code block downloads, native navigation patch, local what's-new panel | P2 | M | T1.5 | D | S,E | DOM fixture tests | None | UX patches are optional, reversible, and covered by selectors/fixtures |
+| T5.5 | Decide custom CSS/theme preset policy; implement only if compatible with store/product posture | P2 | S | T1.5 | E | P,E | Not applicable if decision doc only; if implemented, add settings tests | Record policy decision | A documented go/no-go decision exists; no remote CSS or unbounded injection is introduced |
 
 ### Parallel Lanes
 
 | Lane | Tasks | Combined Effort | Merge Risk | Key Files |
 |:--|:--|:--|:--|:--|
-| A | T5.1 | M | Medium | tests/scripts and locale resources |
-| B | T5.2 | S | Low | `README.md`, `README_EN.md`, `docs/chrome-web-store/**` |
-| C | T5.3 | M | Low | validation commands and generated build outputs |
+| A | T5.1 | L | High | DeepSeek DOM adapters |
+| B | T5.2 | M | Medium | export modules, saved items |
+| C | T5.3 | M | Low | sidepanel API playground |
+| D | T5.4 | M | Medium | content DOM utilities |
+| E | T5.5 | S | Low | docs/settings |
+
+## Phase 6: Hardening, Documentation, and Release Readiness
+
+**Goal**: Validate the full feature set, update public docs without leaking implementation details, and prepare a release-quality branch.
+**Prerequisite**: Selected feature phases complete.
+**S.U.P.E.R Focus**: P, E, R.
+
+| # | Task | Priority | Effort | Depends On | Lane | S.U.P.E.R | Test Expectation | Memory Impact | Acceptance Criteria |
+|:--|:--|:--|:--|:--|:--|:--|:--|:--|:--|
+| T6.1 | Run and fix full validation matrix across compile, tests, prompt freeze, browser builds, smoke checks, and Android best-available checks | P0 | L | T2.*,T3.*,T4.*,T5.* | A | P,E | Full validation matrix | Record any new release gate | Validation results are documented with exact pass/fail/blocked states |
+| T6.2 | Update README, README_EN, store-facing docs, and Android install/developer docs | P1 | M | T6.1 | B | S,P | Docs leakage checks and markdown/diff checks | Record public positioning if durable | Public docs describe user-visible features only and do not expose internal endpoints/protocol details |
+| T6.3 | Final progress reconciliation and archive preparation | P1 | S | T6.1,T6.2 | C | P | GitHub issue/milestone status check | None | MASTER.md, issues, milestones, and archive notes are consistent before release/merge |
+
+### Parallel Lanes
+
+| Lane | Tasks | Combined Effort | Merge Risk | Key Files |
+|:--|:--|:--|:--|:--|
+| A | T6.1 | L | High | whole repo |
+| B | T6.2 | M | Low | README/docs/store |
+| C | T6.3 | S | Low | progress/archive docs |

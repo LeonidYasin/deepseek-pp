@@ -2,98 +2,98 @@
 
 ## Preliminary Direction
 
-为 DeepSeek++ 增加多语言支持，第一阶段先支持英文版本。当前目标应覆盖插件本体的用户可见文案，并为后续更多语言留下单一、可测试、可替换的 i18n 端口。
+把 EdgeTypE/better-deepseek 中 DeepSeek++ 当前缺失且高价值的能力纳入本项目，优先覆盖 Android WebView 平台、项目/文件上下文、生成物交付、沙箱代码执行、语音和会话组织；实现时保留 DeepSeek++ 现有 WXT + React + TypeScript + ToolDescriptor/MCP 架构，不照搬 Better DeepSeek 的独立 BDS 标签体系。
+
+参照仓库快照：`EdgeTypE/better-deepseek` `450168e`，2026-06-09，`visualizer-kit css rework`。
 
 ## Current Architecture
 
 ```mermaid
 graph TD
-  Browser["Browser extension runtime"]
-  Background["entrypoints/background.ts"]
-  Content["entrypoints/content.ts"]
-  MainWorld["entrypoints/main-world.content.ts"]
-  Sidepanel["entrypoints/sidepanel React app"]
-  Core["core/* domain modules"]
-  Storage["chrome.storage / IndexedDB via Dexie"]
-  Native["packages/shell-host native host"]
-  DeepSeek["chat.deepseek.com / api.deepseek.com"]
-  Web["Bing / WebDAV / MCP servers / GitHub"]
-
-  Browser --> Background
-  Browser --> Content
-  Browser --> MainWorld
-  Browser --> Sidepanel
-  Sidepanel --> Background
-  Background --> Core
-  Content --> Core
-  Core --> Storage
-  Core --> Native
-  Core --> DeepSeek
-  Core --> Web
+    DeepSeek["chat.deepseek.com"] --> MainWorld["entrypoints/main-world.content.ts"]
+    MainWorld --> FetchHook["core/interceptor/fetch-hook.ts"]
+    MainWorld --> SkillPopup["core/ui/skill-popup.ts"]
+    FetchHook --> Content["entrypoints/content.ts"]
+    Content --> Augment["core/interceptor/request-augmentation.ts"]
+    Augment --> Prompt["core/prompt/augmentation.ts"]
+    Prompt --> Memory["core/memory/*"]
+    Prompt --> Skill["core/skill/*"]
+    Prompt --> Tools["core/tool/*"]
+    Content --> ToolRuntime["core/tool/runtime.ts + core/mcp/*"]
+    Content --> Export["core/export/*"]
+    Content --> InlineAgent["core/inline-agent/*"]
+    Content --> Pet["core/pet/*"]
+    Sidepanel["entrypoints/sidepanel/*"] --> Stores["core/*/store.ts"]
+    Background["entrypoints/background.ts"] --> DeepSeekApi["core/deepseek/*"]
+    ShellHost["packages/shell-host"] --> MCP["core/mcp/transports/native.ts"]
 ```
 
-DeepSeek++ 是 WXT + React + TypeScript 的 MV3 浏览器扩展。后台 service worker 负责存储、工具执行、MCP、自动化、导出、右键菜单和 sidepanel 消息路由；content script 注入 DeepSeek 页面，负责导出按钮、工具结果渲染、Agent 续跑展示和悬浮宠物；sidepanel 是主要管理 UI，包含对话、记忆、能力、预设、自动化和设置页面。
-
-当前没有 `_locales/`、`messages.json`、`chrome.i18n`、React i18n context 或统一文案模块。中文文案散落在 `entrypoints/sidepanel/**`、`entrypoints/content.ts`、`entrypoints/background.ts`、`core/tool/**`、`core/pet/lines.ts`、`core/skill/builtin.ts` 和 smoke 脚本中。已有 `README_EN.md` 只是公开文档英文版，不构成插件运行时多语言支持。
+DeepSeek++ 目前是浏览器扩展优先的架构：MAIN world 负责拦截 DeepSeek 请求和响应，content world 负责状态、DOM 渲染和工具执行，sidepanel 负责管理 UI，core 目录承载可测试的业务模块。现有能力已经覆盖 Chrome/Edge/Firefox、MCP、Shell Native Host、OfficeCLI skill、记忆、Skill、GitHub Skill import、WebDAV 同步、联网搜索/网页获取、对话导出、自动化任务、内联 agent 续跑、悬浮宠物和中英文运行时。
 
 ## Technology Stack
 
-| Layer | Current | Target |
+| Layer | Current | Target for this work |
 |:--|:--|:--|
-| Language | TypeScript, JavaScript ESM | TypeScript with typed i18n resources |
-| Framework | WXT, React 19, Tailwind CSS 4 | Same |
-| Build Tool | WXT / Vite / tsc | Same, plus locale asset inclusion |
-| Package Manager | npm workspaces | Same |
-| Database | Dexie / IndexedDB plus `chrome.storage` | Same; optional locale preference in `chrome.storage` |
-| Deployment | Chrome / Edge / Firefox MV3 builds | Same, with browser manifest locale support where applicable |
+| Language | TypeScript, React, browser DOM APIs | TypeScript remains primary; Android adds Kotlin shell only behind platform ports |
+| Framework | WXT MV3 extension, React sidepanel, Tailwind | WXT for browser targets; Android WebView host as separate platform target |
+| Build Tool | WXT, TypeScript, npm workspaces | Add Android web-bundle staging and Gradle wrapper only if Android phase is accepted |
+| Package Manager | npm | npm |
+| Storage | `chrome.storage.local`, IndexedDB/Dexie, WebDAV sync boundaries | Keep existing storage contracts; add schemas for project files, saved items, and Android bridge state |
+| Tool Runtime | Local tools + MCP providers + native messaging shell host | Extend via ToolDescriptor-compatible local tools and sandbox adapters |
+| Deployment | Chrome/Edge/Firefox zip/release assets | Add signed/debug APK pipeline after Android bridge stabilizes |
 
 ## Entry Points
 
-- `entrypoints/background.ts`: background service worker, message router, context menus, automation alarm, export orchestration, chat/tool loops.
-- `entrypoints/content.ts`: DeepSeek page integration, export menu/toast, inline tool blocks, Agent step UI, token speed, pet UI.
-- `entrypoints/main-world.content.ts`: page-context bridge for DeepSeek requests.
-- `entrypoints/sidepanel/App.tsx`: React sidepanel shell and tabs.
-- `entrypoints/sidepanel/pages/*.tsx`: user-facing settings and feature pages.
-- `core/tool/runtime.ts`: tool descriptor and execution registry.
-- `core/prompt/augmentation.ts` and `core/inline-agent/prompt.ts`: model-facing prompt text.
-- `wxt.config.ts`: manifest generation and target browser settings.
-- `packages/shell-host/*`: native messaging host and npm installer.
+- `entrypoints/main-world.content.ts`: MAIN world bridge, fetch hook install, request augmentation RPC, skill popup.
+- `entrypoints/content.ts`: content script runtime, tool execution rendering, export UI injection, token speed, pet, inline agent trace restore.
+- `entrypoints/background.ts`: background RPC, sidepanel bridge, DeepSeek official API, export and automation operations.
+- `entrypoints/sidepanel/App.tsx`: sidepanel shell and pages for settings, memory, skills, tools, MCP, automation, chat, capabilities.
+- `core/interceptor/*`: fetch/SSE/tool parsing and request augmentation boundary.
+- `core/tool/*` and `core/mcp/*`: local + MCP tool descriptors, execution, transport abstractions.
+- `core/export/*`: official DeepSeek conversation export normalization and artifact generation.
+- `packages/shell-host/*`: native messaging host for shell/Python/OfficeCLI.
 
 ## Build & Run
 
 - Development: `npm run dev`
-- Type check: `npm run compile`
-- Unit tests: `npm test`
-- Browser builds: `npm run build:chrome`, `npm run build:edge`, `npm run build:firefox`
-- Full release gate: `npm run ci:quality`
+- Compile: `npm run compile`
+- Tests: `npm test`
+- Browser builds: `npm run build:chrome`, `npm run build:edge`, `npm run build:firefox`, `npm run build:all`
+- Release gates: `npm run ci:quality`, plus targeted smoke commands in `package.json`
+
+Better DeepSeek comparison points:
+
+- It uses a custom Vite/Svelte multi-entry build (`build.js`) for Chrome/Firefox/Android.
+- Android uses `android/` Kotlin WebView host, WebViewAssetLoader, JavaScript bridge, Android file/folder pickers, downloads, cookie/theme handling, and Gradle tasks.
+- It has Playwright e2e for browser and Android WebView simulator, plus Kotlin unit tests.
 
 ## Testing Baseline
 
-Vitest is configured for `tests/**/*.test.ts` in `jsdom`. Existing tests cover conversation export, official API, inline markdown, MCP transport common logic, memory tool behavior, request augmentation, shell policy, and sync schema. There is no current i18n test harness, no text coverage audit, and no sidepanel rendering snapshot focused on locale switching.
+DeepSeek++ has a strong TypeScript/Vitest baseline for request augmentation, memory, MCP transport, i18n, export, sync, shell policy, inline markdown/prompt, and token speed. Current gaps for this transformation:
 
-For English support, the reliable first test layer should be pure unit tests for locale resolution and translator behavior, followed by targeted tests for resource completeness. UI smoke can be added after the i18n provider is wired into the sidepanel/content surfaces.
+- No Android build, bridge, or emulator test harness.
+- No e2e browser suite exercising DeepSeek DOM injection end to end.
+- No tests for project/file context ingestion, RAG retrieval, saved snippets, voice, sandboxed code execution, or generated file artifacts because those modules do not exist yet.
+- Prompt/tool changes are protected by `prompt:freeze`; any new model-facing tool syntax must update freeze fixtures intentionally.
 
 ## Project Governance Baseline
 
-- Shared instruction surface: `AGENTS.md`, auto-synced from Claude project memory. It is canonical for shared repo guidance.
-- Claude Code instruction surface: no root `CLAUDE.md` in this repository. `.claude/settings.local.json` exists, plus `.claude/worktrees/`.
-- Codex/project skill surface: `.codex/skills/` exists but currently has no files.
-- Native memory surface: Codex memory is available outside the repo and contains prior DeepSeek++ conventions; it should remain the durable memory surface. No repo-local fallback memory should be created unless explicitly selected.
-- Progress surface: no active `docs/progress/MASTER.md`; this is a fresh spec-driven task.
-- Current worktree note: `audit-report-deepseek-pp-2026-06-05.html` is already deleted before this run and is unrelated to i18n. Do not revert it as part of this task.
+- Shared instruction surface: `AGENTS.md`, auto-generated from Claude project memory. It should not be hand-edited for durable rules unless the sync source is also updated.
+- Claude Code surface: no root `CLAUDE.md`; `.claude/settings.local.json` exists.
+- Other platform surfaces: `.codex/skills/` exists, but no project-specific skill files were found.
+- Memory surface: Codex native memory is the resolved durable memory surface. No repo-local fallback memory file is declared.
+- Previous active spec artifacts for multilingual English runtime support were complete and have been archived under `docs/archives/multilingual-english-runtime-support/`.
 
 ## External Integrations
 
-- DeepSeek web and official API: `chat.deepseek.com`, `api.deepseek.com`
-- Browser APIs: `chrome.storage`, `chrome.runtime`, `chrome.contextMenus`, `chrome.sidePanel`, `chrome.permissions`, `chrome.alarms`, `chrome.tabs`
-- MCP transports: HTTP, SSE, Streamable HTTP, stdio bridge, native messaging
-- Native host: `packages/shell-host`
-- WebDAV sync
-- GitHub Skill import API
-- Bing search/fetch permissions
+- DeepSeek web and official web API/session endpoints.
+- Browser extension APIs: storage, alarms, context menus, sidePanel, native messaging, downloads.
+- MCP transports: HTTP, SSE, Streamable HTTP, bridge/native messaging.
+- Shell Native Host and OfficeCLI installer.
+- WebDAV sync.
+- Bing web search and web fetch host permissions.
+- GitHub Skill import API.
 
-## GitHub Tracking Pre-flight
+## Detected Tracking Mode
 
-Detected mode: `GITHUB_STANDARD`.
-
-`gh` is installed and authenticated, repository access works for `zhu1090093659/deepseek-pp`, and Issues are available. GitHub Projects access is not available in the current auth scope, so this run can create Issues and Milestones after confirmation, but not a Project board unless auth is refreshed with project scope.
+`GITHUB_STANDARD`: `gh` CLI and repo/issues access are available, but GitHub Projects scope is unavailable. Planning can create milestones, labels, and issues; no project board will be created unless auth is refreshed with project scope.

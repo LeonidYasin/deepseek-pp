@@ -43,8 +43,10 @@ import { getSyncConfig, saveSyncConfig } from '../core/sync/config';
 import { webdavTest, webdavMkcol, webdavGet, webdavPut } from '../core/sync/webdav-client';
 import {
   parseValidatedArray,
+  parseValidatedJson,
   validateGitHubSkillSource,
   validatePreset,
+  validateProjectContextState,
   validateSkill,
   validateStoredMemory,
 } from '../core/sync/schema';
@@ -54,6 +56,20 @@ import {
   getRuntimeToolDescriptors,
   refreshRuntimeToolDescriptors,
 } from '../core/tool/runtime';
+import {
+  addProjectFiles,
+  createProjectContext,
+  deleteProjectContext,
+  fetchGitHubProjectFiles,
+  formatProjectPromptContext,
+  getActiveProjectPromptContext,
+  getProjectContextState,
+  saveProjectContextState,
+  setActiveProjectContext,
+  setActiveProjectFiles,
+} from '../core/project';
+import { getArtifact } from '../core/artifact';
+import { getCurrentBrowserExtensionEnvironment } from '../core/platform';
 import {
   createMcpServer,
   deleteMcpServer,
@@ -123,7 +139,7 @@ import {
   watchLocalePreference,
 } from '../core/i18n/store';
 import type { WebSearchToolName } from '../core/tool/web-search';
-import type { BackgroundConfig, DeepSeekTheme, GitHubSkillImportRequest, GitHubSkillSource, Memory, ModelType, NewMemory, PetConfig, Skill, SyncConfig, SyncCounts, SystemPromptPreset, ToolCall, ToolDescriptor, ToolExecutionRecord, ToolResult } from '../core/types';
+import type { BackgroundConfig, DeepSeekTheme, GitHubSkillImportRequest, GitHubSkillSource, Memory, ModelType, NewMemory, PetConfig, ProjectContextState, Skill, SyncConfig, SyncCounts, SystemPromptPreset, ToolCall, ToolDescriptor, ToolExecutionRecord, ToolResult } from '../core/types';
 import type { McpServerCreateInput, McpServerUpdateInput } from '../core/mcp/types';
 import type { AutomationCreateInput, AutomationRunnerRequest, AutomationRunnerResult, AutomationStatus, AutomationUpdateInput } from '../core/automation/types';
 import type { ConversationExportProgress, ConversationExportResult } from '../core/export/types';
@@ -156,6 +172,7 @@ type SyncDataSnapshot = {
   skills: Skill[];
   skillSources: GitHubSkillSource[];
   presets: SystemPromptPreset[];
+  projectContext: ProjectContextState | null;
 };
 
 export default defineBackground(() => {
@@ -621,6 +638,66 @@ async function handleMessage(
       return { ok: true };
     }
 
+    case 'GET_PLATFORM_CAPABILITIES':
+      return getCurrentBrowserExtensionEnvironment();
+
+    case 'GET_PROJECT_CONTEXT_STATE':
+      return getProjectContextState();
+
+    case 'CREATE_PROJECT_CONTEXT': {
+      const project = await createProjectContext(message.payload as Parameters<typeof createProjectContext>[0]);
+      await broadcastProjectContextUpdate(sender.tab?.id);
+      return project;
+    }
+
+    case 'DELETE_PROJECT_CONTEXT': {
+      const { projectId } = message.payload as { projectId: string };
+      await deleteProjectContext(projectId);
+      await broadcastProjectContextUpdate(sender.tab?.id);
+      return { ok: true };
+    }
+
+    case 'SET_ACTIVE_PROJECT_CONTEXT': {
+      const { projectId } = message.payload as { projectId: string | null };
+      await setActiveProjectContext(projectId);
+      await broadcastProjectContextUpdate(sender.tab?.id);
+      return { ok: true };
+    }
+
+    case 'ADD_PROJECT_FILES': {
+      const { projectId, files } = message.payload as { projectId: string; files: Parameters<typeof addProjectFiles>[1] };
+      const added = await addProjectFiles(projectId, files);
+      await broadcastProjectContextUpdate(sender.tab?.id);
+      return { ok: true, files: added };
+    }
+
+    case 'SET_ACTIVE_PROJECT_FILES': {
+      const { projectId, fileIds } = message.payload as { projectId: string; fileIds: string[] };
+      await setActiveProjectFiles(projectId, fileIds);
+      await broadcastProjectContextUpdate(sender.tab?.id);
+      return { ok: true };
+    }
+
+    case 'GET_ACTIVE_PROJECT_CONTEXT': {
+      const { query } = message.payload as { query?: string };
+      const context = await getActiveProjectPromptContext(query ?? '');
+      return context ? formatProjectPromptContext(context) : null;
+    }
+
+    case 'IMPORT_GITHUB_PROJECT_CONTEXT': {
+      const { projectId, url, token } = message.payload as { projectId: string; url: string; token?: string };
+      const result = await fetchGitHubProjectFiles(url, { token });
+      const files = await addProjectFiles(projectId, result.files);
+      await broadcastProjectContextUpdate(sender.tab?.id);
+      return { ok: true, source: result.source, files, warnings: result.warnings };
+    }
+
+    case 'GET_ARTIFACT': {
+      const { id } = message.payload as { id: string };
+      const artifact = await getArtifact(id);
+      return artifact ? { ok: true, artifact } : { ok: false, error: 'artifact_not_found' };
+    }
+
     case 'GET_CONFIG':
       return { version: getExtensionVersion() };
 
@@ -735,16 +812,21 @@ async function handleMessage(
 
       const snapshot = await getRemoteSyncDataSnapshot(config);
 
-      await Promise.all([
+      const replacements: Promise<unknown>[] = [
         replaceAllMemories(snapshot.memories),
         replaceAllCustomSkills(snapshot.skills),
         replaceAllSkillSources(snapshot.skillSources),
         replaceAllPresets(snapshot.presets),
-      ]);
+      ];
+      if (snapshot.projectContext) {
+        replacements.push(saveProjectContextState(snapshot.projectContext));
+      }
+      await Promise.all(replacements);
 
       const now = Date.now();
       await saveSyncConfig({ ...config, lastSyncAt: now });
       await broadcastStateUpdate(sender.tab?.id);
+      if (snapshot.projectContext) await broadcastProjectContextUpdate(sender.tab?.id);
       return { ok: true, lastSyncAt: now, counts: getSyncCounts(snapshot) };
     }
 
@@ -935,6 +1017,11 @@ async function broadcastToolDescriptorsUpdate(excludeTabId?: number) {
 
 async function broadcastToolCallHistoryUpdate(excludeTabId?: number) {
   await broadcastToTabs({ type: 'TOOL_CALL_HISTORY_UPDATED' }, excludeTabId);
+}
+
+async function broadcastProjectContextUpdate(excludeTabId?: number) {
+  const state = await getProjectContextState();
+  await broadcastToTabs({ type: 'PROJECT_CONTEXT_UPDATED', state }, excludeTabId);
 }
 
 async function broadcastAutomationUpdate(excludeTabId?: number) {
@@ -1146,11 +1233,12 @@ function isAutomationStatus(status: unknown): status is AutomationStatus {
 }
 
 async function getLocalSyncDataSnapshot(): Promise<SyncDataSnapshot> {
-  const [memories, userSkills, skillSources, presets] = await Promise.all([
+  const [memories, userSkills, skillSources, presets, projectContext] = await Promise.all([
     getAllMemories(),
     getUserSkills(),
     getAllSkillSources(),
     getAllPresets(),
+    getProjectContextState(),
   ]);
 
   return {
@@ -1158,6 +1246,7 @@ async function getLocalSyncDataSnapshot(): Promise<SyncDataSnapshot> {
     skills: userSkills,
     skillSources,
     presets,
+    projectContext,
   };
 }
 
@@ -1167,15 +1256,19 @@ async function uploadSyncDataSnapshot(config: SyncConfig, snapshot: SyncDataSnap
     webdavPut(config, 'skills.json', JSON.stringify(snapshot.skills)),
     webdavPut(config, 'skill-sources.json', JSON.stringify(snapshot.skillSources)),
     webdavPut(config, 'presets.json', JSON.stringify(snapshot.presets)),
+    snapshot.projectContext
+      ? webdavPut(config, 'project-context.json', JSON.stringify(snapshot.projectContext))
+      : Promise.resolve(),
   ]);
 }
 
 async function getRemoteSyncDataSnapshot(config: SyncConfig): Promise<SyncDataSnapshot> {
-  const [remoteMemJson, remoteSkillJson, remotePresetJson, remoteSkillSourceJson] = await Promise.all([
+  const [remoteMemJson, remoteSkillJson, remotePresetJson, remoteSkillSourceJson, remoteProjectContextJson] = await Promise.all([
     webdavGetRequired(config, 'memories.json'),
     webdavGetRequired(config, 'skills.json'),
     webdavGetRequired(config, 'presets.json'),
     webdavGet(config, 'skill-sources.json'),
+    webdavGet(config, 'project-context.json'),
   ]);
 
   const memories = parseValidatedArray('memories.json', remoteMemJson, (item, path) => {
@@ -1191,6 +1284,9 @@ async function getRemoteSyncDataSnapshot(config: SyncConfig): Promise<SyncDataSn
       ? []
       : parseValidatedArray('skill-sources.json', remoteSkillSourceJson, validateGitHubSkillSource),
     presets: parseValidatedArray('presets.json', remotePresetJson, validatePreset),
+    projectContext: remoteProjectContextJson === null
+      ? null
+      : parseValidatedJson('project-context.json', remoteProjectContextJson, validateProjectContextState),
   };
 }
 
@@ -1207,6 +1303,8 @@ function getSyncCounts(snapshot: SyncDataSnapshot): SyncCounts {
     memories: snapshot.memories.length,
     skills: snapshot.skills.length,
     presets: snapshot.presets.length,
+    projects: snapshot.projectContext?.projects.length ?? 0,
+    projectFiles: snapshot.projectContext?.files.length ?? 0,
   };
 }
 

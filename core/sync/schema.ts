@@ -7,27 +7,44 @@ import type {
   SkillSource,
   SystemPromptPreset,
 } from '../types';
+import {
+  PROJECT_CONTEXT_SCHEMA_VERSION,
+  type ProjectContext,
+  type ProjectContextState,
+  type ProjectFile,
+  type ProjectSourceKind,
+} from '../project/types';
 
 const MEMORY_TYPES: readonly MemoryType[] = ['user', 'feedback', 'topic', 'reference'];
 const SKILL_SOURCES: readonly SkillSource[] = ['builtin', 'official', 'custom', 'remote'];
+const PROJECT_SOURCE_KINDS: readonly ProjectSourceKind[] = ['manual', 'local_folder', 'github', 'web_page'];
 
 export function parseValidatedArray<T>(
   file: string,
   content: string,
   validate: (value: unknown, path: string) => T,
 ): T[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new Error(`云端 ${file} 不是有效 JSON，已停止下载`);
-  }
+  const parsed = parseValidatedJson(file, content, (value) => value);
 
   if (!Array.isArray(parsed)) {
     throw new Error(`云端 ${file} 格式错误，应为数组，已停止下载`);
   }
 
   return parsed.map((item, index) => validate(item, `${file}[${index}]`));
+}
+
+export function parseValidatedJson<T>(
+  file: string,
+  content: string,
+  validate: (value: unknown, path: string) => T,
+): T {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(`云端 ${file} 不是有效 JSON，已停止下载`);
+  }
+  return validate(parsed, file);
 }
 
 export function validateStoredMemory(value: unknown, path = 'memory'): Omit<Memory, 'id'> {
@@ -113,11 +130,96 @@ export function validatePreset(value: unknown, path = 'preset'): SystemPromptPre
   };
 }
 
+export function validateProjectContext(value: unknown, path = 'project'): ProjectContext {
+  const object = objectValue(value, path);
+  const source = objectValue(object.source, `${path}.source`);
+  return {
+    id: requiredString(object.id, `${path}.id`),
+    name: requiredString(object.name, `${path}.name`),
+    description: typeof object.description === 'string' ? object.description : '',
+    instructions: typeof object.instructions === 'string' ? object.instructions : '',
+    source: {
+      kind: enumValue(source.kind, PROJECT_SOURCE_KINDS, `${path}.source.kind`),
+      label: requiredString(source.label, `${path}.source.label`),
+      ...(source.url === undefined ? {} : { url: requiredString(source.url, `${path}.source.url`) }),
+      ...(source.owner === undefined ? {} : { owner: requiredString(source.owner, `${path}.source.owner`) }),
+      ...(source.repo === undefined ? {} : { repo: requiredString(source.repo, `${path}.source.repo`) }),
+      ...(source.ref === undefined ? {} : { ref: requiredString(source.ref, `${path}.source.ref`) }),
+      importedAt: requiredFiniteNumber(source.importedAt, `${path}.source.importedAt`),
+    },
+    createdAt: requiredFiniteNumber(object.createdAt, `${path}.createdAt`),
+    updatedAt: requiredFiniteNumber(object.updatedAt, `${path}.updatedAt`),
+  };
+}
+
+export function validateProjectFile(value: unknown, path = 'projectFile'): ProjectFile {
+  const object = objectValue(value, path);
+  return {
+    id: requiredString(object.id, `${path}.id`),
+    projectId: requiredString(object.projectId, `${path}.projectId`),
+    path: requiredString(object.path, `${path}.path`),
+    content: requiredString(object.content, `${path}.content`),
+    sizeBytes: requiredFiniteNumber(object.sizeBytes, `${path}.sizeBytes`),
+    sourceKind: enumValue(object.sourceKind, PROJECT_SOURCE_KINDS, `${path}.sourceKind`),
+    createdAt: requiredFiniteNumber(object.createdAt, `${path}.createdAt`),
+  };
+}
+
+export function validateProjectContextState(value: unknown, path = 'projectContext'): ProjectContextState {
+  const object = objectValue(value, path);
+  if (object.schemaVersion !== undefined && object.schemaVersion !== PROJECT_CONTEXT_SCHEMA_VERSION) {
+    throw new Error(`${path}.schemaVersion is not supported`);
+  }
+
+  const projects = arrayValue(object.projects, `${path}.projects`)
+    .map((item, index) => validateProjectContext(item, `${path}.projects[${index}]`));
+  const projectIds = new Set(projects.map((project) => project.id));
+  const files = arrayValue(object.files, `${path}.files`)
+    .map((item, index) => validateProjectFile(item, `${path}.files[${index}]`));
+
+  for (const file of files) {
+    if (!projectIds.has(file.projectId)) {
+      throw new Error(`${path}.files contains file for unknown project: ${file.projectId}`);
+    }
+  }
+
+  const activeProjectId = object.activeProjectId === null
+    ? null
+    : requiredString(object.activeProjectId, `${path}.activeProjectId`);
+  if (activeProjectId !== null && !projectIds.has(activeProjectId)) {
+    throw new Error(`${path}.activeProjectId references an unknown project`);
+  }
+
+  const fileIds = new Set(files.map((file) => file.id));
+  const activeFileIds = arrayValue(object.activeFileIds, `${path}.activeFileIds`)
+    .map((item, index) => requiredString(item, `${path}.activeFileIds[${index}]`));
+  for (const fileId of activeFileIds) {
+    if (!fileIds.has(fileId)) {
+      throw new Error(`${path}.activeFileIds contains an unknown file: ${fileId}`);
+    }
+  }
+
+  return {
+    schemaVersion: PROJECT_CONTEXT_SCHEMA_VERSION,
+    projects,
+    files,
+    activeProjectId,
+    activeFileIds,
+  };
+}
+
 function objectValue(value: unknown, path: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${path} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function arrayValue(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${path} must be an array`);
+  }
+  return value;
 }
 
 function requiredString(value: unknown, path: string): string {
@@ -161,4 +263,3 @@ function enumValue<T extends string>(value: unknown, allowed: readonly T[], path
   }
   return value as T;
 }
-

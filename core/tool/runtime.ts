@@ -24,6 +24,11 @@ import {
   executeWebSearchToolCall,
   isWebSearchToolName,
 } from './web-search';
+import {
+  createArtifactToolDescriptors,
+  executeArtifactToolCall,
+  isArtifactToolName,
+} from '../artifact';
 import { getWebToolSettings } from './web-settings';
 import type { ToolCall, ToolDescriptor, ToolExecutionTrigger, ToolResult } from './types';
 
@@ -53,6 +58,7 @@ export async function getRuntimeToolDescriptors(
   return [
     ...createMemoryToolDescriptors(locale),
     ...enabledWebDescriptors,
+    ...createArtifactToolDescriptors(locale),
     ...await getMcpToolDescriptors(),
   ];
 }
@@ -101,6 +107,10 @@ async function executeToolCallWithoutHistory(
 
   if (isWebSearchToolName(call.name)) {
     return executeWebSearchToolCall(call, locale);
+  }
+
+  if (isArtifactToolName(call.name)) {
+    return executeArtifactToolCall(call, locale);
   }
 
   if (call.provider?.kind === 'mcp' || call.descriptorId?.startsWith('mcp:')) {

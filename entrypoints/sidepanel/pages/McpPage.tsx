@@ -4,6 +4,10 @@ import {
   SHELL_MCP_SERVER_NAME,
   createShellMcpPresetInput,
 } from '../../../core/shell';
+import {
+  getSupportedMcpTransportKinds,
+  isShellNativeHostSupported,
+} from '../../../core/platform';
 import type { LocaleMessageKey, MessageParams, SupportedLocale } from '../../../core/i18n';
 import type {
   McpHeaderValue,
@@ -17,6 +21,7 @@ import type {
   ToolCallHistoryRecord,
   ToolDescriptor,
   ToolExecutionMode,
+  PlatformEnvironment,
 } from '../../../core/types';
 import { useI18n } from '../i18n';
 
@@ -86,6 +91,7 @@ export default function McpPage() {
   const [editing, setEditing] = useState<McpServerConfig | null>(null);
   const [busy, setBusy] = useState<Record<string, BusyAction | null>>({});
   const [message, setMessage] = useState('');
+  const [platform, setPlatform] = useState<PlatformEnvironment | null>(null);
 
   const selected = servers.find((server) => server.id === selectedId) ?? servers[0] ?? null;
   const selectedCache = selected ? caches[selected.id] ?? null : null;
@@ -95,12 +101,17 @@ export default function McpPage() {
     [servers, caches],
   );
   const mcpHistory = history.filter((record) => record.call.provider?.kind === 'mcp');
+  const nativeMessagingSupported = isShellNativeHostSupported(platform);
 
   const load = async () => {
     setLoading(true);
     try {
-      const list: McpServerConfig[] = await chrome.runtime.sendMessage({ type: 'GET_MCP_SERVERS' });
+      const [list, environment]: [McpServerConfig[], PlatformEnvironment | null] = await Promise.all([
+        chrome.runtime.sendMessage({ type: 'GET_MCP_SERVERS' }),
+        chrome.runtime.sendMessage({ type: 'GET_PLATFORM_CAPABILITIES' }),
+      ]);
       const nextServers = list ?? [];
+      setPlatform(environment ?? null);
       setServers(nextServers);
       setSelectedId((current) => {
         if (current && nextServers.some((server) => server.id === current)) return current;
@@ -168,6 +179,10 @@ export default function McpPage() {
 
   const createShellPreset = async () => {
     setMessage('');
+    if (!nativeMessagingSupported) {
+      setMessage(t('sidepanel.mcpPage.messages.nativeMessagingUnsupported'));
+      return;
+    }
     const existing = servers.find((server) =>
       server.displayName === SHELL_MCP_SERVER_NAME ||
       server.transport.nativeHost === SHELL_MCP_NATIVE_HOST
@@ -309,7 +324,9 @@ export default function McpPage() {
         <div className="flex items-center gap-1.5">
           <button
             onClick={createShellPreset}
-            className="ds-btn-secondary px-3 py-1.5 text-xs rounded-lg transition-all duration-150"
+            disabled={!nativeMessagingSupported}
+            title={!nativeMessagingSupported ? t('sidepanel.mcpPage.messages.nativeMessagingUnsupported') : undefined}
+            className="ds-btn-secondary px-3 py-1.5 text-xs rounded-lg transition-all duration-150 disabled:opacity-50"
           >
             {t('sidepanel.mcpPage.shell')}
           </button>
@@ -336,6 +353,7 @@ export default function McpPage() {
           <McpServerForm
             key={editing?.id ?? 'create'}
             initial={editing}
+            platform={platform}
             onSave={saveServer}
             onCancel={() => { setShowForm(false); setEditing(null); setMessage(''); }}
           />
@@ -390,17 +408,33 @@ export default function McpPage() {
 
 function McpServerForm({
   initial,
+  platform,
   onSave,
   onCancel,
 }: {
   initial: McpServerConfig | null;
+  platform: PlatformEnvironment | null;
   onSave: (payload: McpServerCreateInput) => Promise<void>;
   onCancel: () => void;
 }) {
   const { t } = useI18n();
   const [form, setForm] = useState<FormState>(() => initial ? formFromServer(initial) : DEFAULT_FORM);
   const [error, setError] = useState('');
-  const selectedTransport = TRANSPORT_OPTIONS.find((item) => item.kind === form.transportKind) ?? TRANSPORT_OPTIONS[0];
+  const supportedTransportKinds = getSupportedMcpTransportKinds(
+    TRANSPORT_OPTIONS.map((item) => item.kind),
+    platform,
+  );
+  const transportOptions = TRANSPORT_OPTIONS.filter((item) => supportedTransportKinds.includes(item.kind));
+  const selectedTransport = transportOptions.find((item) => item.kind === form.transportKind) ?? transportOptions[0] ?? TRANSPORT_OPTIONS[0];
+
+  useEffect(() => {
+    if (supportedTransportKinds.includes(form.transportKind)) return;
+    setForm((prev) => ({
+      ...prev,
+      transportKind: 'streamable_http',
+      nativeHost: '',
+    }));
+  }, [form.transportKind, supportedTransportKinds.join('|')]);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -411,7 +445,7 @@ function McpServerForm({
   };
 
   const save = async () => {
-    const result = payloadFromForm(form, t);
+    const result = payloadFromForm(form, t, platform);
     if ('error' in result) {
       setError(result.error);
       return;
@@ -457,7 +491,7 @@ function McpServerForm({
           onChange={(event) => setTransportKind(event.target.value as McpTransportKind)}
           className="ds-input w-full rounded-lg px-3 py-2 text-sm"
         >
-          {TRANSPORT_OPTIONS.map((item) => (
+          {transportOptions.map((item) => (
             <option key={item.kind} value={item.kind}>{item.label}</option>
           ))}
         </select>
@@ -993,7 +1027,11 @@ function formFromServer(server: McpServerConfig): FormState {
   };
 }
 
-function payloadFromForm(form: FormState, t: Translator): { payload: McpServerCreateInput } | { error: string } {
+function payloadFromForm(
+  form: FormState,
+  t: Translator,
+  platform: PlatformEnvironment | null,
+): { payload: McpServerCreateInput } | { error: string } {
   const displayName = form.displayName.trim();
   if (!displayName) return { error: t('sidepanel.mcpPage.validation.nameRequired') };
 
@@ -1010,7 +1048,7 @@ function payloadFromForm(form: FormState, t: Translator): { payload: McpServerCr
     Object.values(limits).find((value) => typeof value === 'string');
   if (typeof invalidNumber === 'string') return { error: invalidNumber };
 
-  const transportResult = transportFromForm(form, t);
+  const transportResult = transportFromForm(form, t, platform);
   if ('error' in transportResult) return transportResult;
 
   const headersResult = normalizeHeaders(form.headers, t);
@@ -1040,8 +1078,15 @@ function payloadFromForm(form: FormState, t: Translator): { payload: McpServerCr
   };
 }
 
-function transportFromForm(form: FormState, t: Translator): { transport: McpServerTransportConfig } | { error: string } {
+function transportFromForm(
+  form: FormState,
+  t: Translator,
+  platform: PlatformEnvironment | null,
+): { transport: McpServerTransportConfig } | { error: string } {
   if (form.transportKind === 'native_messaging') {
+    if (!isShellNativeHostSupported(platform)) {
+      return { error: t('sidepanel.mcpPage.messages.nativeMessagingUnsupported') };
+    }
     const nativeHost = form.nativeHost.trim();
     if (!nativeHost) return { error: t('sidepanel.mcpPage.validation.nativeHostRequired') };
     if (!/^[A-Za-z0-9_.-]+$/.test(nativeHost)) return { error: t('sidepanel.mcpPage.validation.nativeHostInvalid') };

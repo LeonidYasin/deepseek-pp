@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { SHELL_MCP_NATIVE_HOST, SHELL_MCP_SERVER_NAME, createShellMcpPresetInput } from '../../../core/shell';
+import { isShellNativeHostSupported } from '../../../core/platform';
 import type { LocaleMessageKey } from '../../../core/i18n';
-import type { McpServerConfig, McpToolAllowlist, McpToolCacheEntry, ToolDescriptor } from '../../../core/types';
+import type { McpServerConfig, McpToolAllowlist, McpToolCacheEntry, PlatformEnvironment, ToolDescriptor } from '../../../core/types';
 import { useI18n } from '../i18n';
 
 type PermissionState = 'idle' | 'granting' | 'granted' | 'denied' | 'error';
@@ -105,6 +106,7 @@ function PythonToolCard({
   cache,
   busy,
   message,
+  nativeMessagingSupported,
   onCreate,
   onRefresh,
   onToggle,
@@ -113,6 +115,7 @@ function PythonToolCard({
   cache: McpToolCacheEntry | null;
   busy: PythonBusyState;
   message: string;
+  nativeMessagingSupported: boolean;
   onCreate: () => void;
   onRefresh: () => void;
   onToggle: () => void;
@@ -124,7 +127,9 @@ function PythonToolCard({
   const hasShell = Boolean(server);
   const canToggle = Boolean(server && pythonExec && busy === 'idle');
   const statusText = !server
-    ? t('sidepanel.toolsPage.pythonStatusNoShell')
+    ? nativeMessagingSupported
+      ? t('sidepanel.toolsPage.pythonStatusNoShell')
+      : t('sidepanel.toolsPage.pythonStatusUnsupported')
     : !cache
       ? t('sidepanel.toolsPage.pythonStatusNoCache')
       : pythonExec
@@ -179,7 +184,7 @@ function PythonToolCard({
           {!hasShell && (
             <button
               onClick={onCreate}
-              disabled={busy !== 'idle'}
+              disabled={busy !== 'idle' || !nativeMessagingSupported}
               className="ds-btn-secondary px-2 py-1 text-[11px] rounded-md disabled:opacity-50"
             >
               {busy === 'creating' ? t('sidepanel.toolsPage.pythonCreating') : t('sidepanel.toolsPage.pythonCreate')}
@@ -229,6 +234,7 @@ export default function ToolsPage() {
   const [pythonCache, setPythonCache] = useState<McpToolCacheEntry | null>(null);
   const [pythonBusy, setPythonBusy] = useState<PythonBusyState>('idle');
   const [pythonMessage, setPythonMessage] = useState('');
+  const [platform, setPlatform] = useState<PlatformEnvironment | null>(null);
 
   useEffect(() => {
     chrome.runtime.sendMessage({ type: 'GET_WEB_TOOL_SETTINGS' }).then((result: Record<string, boolean>) => {
@@ -251,7 +257,11 @@ export default function ToolsPage() {
   }, []);
 
   const loadPythonTool = async () => {
-    const servers: McpServerConfig[] = await chrome.runtime.sendMessage({ type: 'GET_MCP_SERVERS' });
+    const [servers, environment]: [McpServerConfig[], PlatformEnvironment | null] = await Promise.all([
+      chrome.runtime.sendMessage({ type: 'GET_MCP_SERVERS' }),
+      chrome.runtime.sendMessage({ type: 'GET_PLATFORM_CAPABILITIES' }),
+    ]);
+    setPlatform(environment ?? null);
     const shell = (servers ?? []).find(isShellServer) ?? null;
     setPythonServer(shell);
 
@@ -271,6 +281,10 @@ export default function ToolsPage() {
     setPythonBusy('creating');
     setPythonMessage('');
     try {
+      if (!isShellNativeHostSupported(platform)) {
+        setPythonMessage(t('sidepanel.toolsPage.pythonStatusUnsupported'));
+        return;
+      }
       const existing = pythonServer;
       if (existing) {
         setPythonMessage(t('sidepanel.toolsPage.shellExists'));
@@ -447,6 +461,7 @@ export default function ToolsPage() {
           cache={pythonCache}
           busy={pythonBusy}
           message={pythonMessage}
+          nativeMessagingSupported={isShellNativeHostSupported(platform)}
           onCreate={handleCreatePythonShell}
           onRefresh={handleRefreshPythonTools}
           onToggle={handleTogglePython}

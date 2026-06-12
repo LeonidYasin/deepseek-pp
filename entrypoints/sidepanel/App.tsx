@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { LocaleMessageKey } from '../../core/i18n';
-import { getExtensionVersion } from '../../core/version';
 import { getChatEnabled } from '../../core/chat/store';
 import { useI18n } from './i18n';
 import { setPendingText } from './pending-text';
@@ -24,7 +23,6 @@ const TABS: { key: Tab; labelKey: LocaleMessageKey; icon: string }[] = [
 export default function App() {
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('chat');
-  const version = getExtensionVersion();
   const [chatEnabled, setChatEnabledState] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -69,26 +67,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen" style={{ background: 'var(--ds-bg)' }}>
-      <header
-        className="flex items-center justify-between px-5 py-3.5"
-        style={{ borderBottom: '1px solid var(--ds-border)' }}
-      >
-        <div className="flex items-center gap-2.5">
-          <img
-            src="/logo.png"
-            alt="DeepSeek++"
-            className="w-7 h-7 rounded-lg object-cover"
-          />
-          <h1 className="text-[15px] font-semibold" style={{ color: 'var(--ds-text)' }}>
-            DeepSeek++
-          </h1>
-        </div>
-        <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ color: 'var(--ds-text-tertiary)', background: 'var(--ds-surface)' }}>
-          {t('app.version', { version })}
-        </span>
-      </header>
-
+    <div className="ds-app-shell">
       <nav className="side-tabs" aria-label={t('app.sideNavLabel')}>
         {TABS.filter((tabConfig) =>
           chatEnabled !== false || tabConfig.key !== 'chat'
@@ -120,7 +99,7 @@ export default function App() {
         })}
       </nav>
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="ds-app-main">
         <Suspense fallback={<div className="p-4 text-sm" style={{ color: 'var(--ds-text-tertiary)' }}>{t('common.loading')}</div>}>
           {tab === 'chat' && <ChatPage />}
           {tab === 'library' && (

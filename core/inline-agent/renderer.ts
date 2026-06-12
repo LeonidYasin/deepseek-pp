@@ -1,3 +1,5 @@
+import { renderInlineMarkdown } from './markdown';
+
 const AGENT_STEP_STYLE_ID = 'dpp-inline-agent-css';
 
 export interface InlineAgentRendererLabels {
@@ -84,7 +86,6 @@ export function injectInlineAgentStyles(): void {
       padding: 8px 10px;
       font-size: 13px;
       line-height: 1.5;
-      white-space: pre-wrap;
       word-break: break-word;
       max-height: 300px;
       overflow-y: auto;
@@ -92,6 +93,67 @@ export function injectInlineAgentStyles(): void {
     }
     .dpp-agent-step-body:empty {
       display: none;
+    }
+    .dpp-agent-step-body * { color: inherit; }
+    .dpp-agent-step-body h2,
+    .dpp-agent-step-body h3,
+    .dpp-agent-step-body h4 {
+      margin: 8px 0 5px;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+    .dpp-agent-step-body h2 { font-size: 1.1em; }
+    .dpp-agent-step-body h3,
+    .dpp-agent-step-body h4 { font-size: 1.02em; }
+    .dpp-agent-step-body p { margin: 4px 0; }
+    .dpp-agent-step-body ul,
+    .dpp-agent-step-body ol {
+      margin: 4px 0 4px 18px;
+    }
+    .dpp-agent-step-body li {
+      margin: 2px 0;
+    }
+    .dpp-agent-step-body strong {
+      font-weight: 600;
+    }
+    .dpp-agent-step-body em {
+      font-style: italic;
+    }
+    .dpp-agent-step-body code {
+      padding: 1px 4px;
+      border-radius: 4px;
+      background: rgba(15, 23, 42, 0.06);
+      font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    .dpp-agent-step-body pre {
+      margin: 6px 0;
+      padding: 8px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.06);
+      overflow-x: auto;
+    }
+    .dpp-agent-step-body pre code {
+      padding: 0;
+      background: transparent;
+      white-space: pre;
+    }
+    .dpp-agent-step-body table {
+      width: 100%;
+      margin: 8px 0;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .dpp-agent-step-body th,
+    .dpp-agent-step-body td {
+      padding: 5px 6px;
+      border-bottom: 1px solid var(--dpp-border, #e5e7eb);
+      text-align: left;
+      vertical-align: top;
+    }
+    .dpp-agent-step-body th {
+      font-weight: 600;
+      color: var(--dpp-muted, #6b7280);
     }
     .dpp-agent-step[data-collapsed="true"] .dpp-agent-step-body {
       max-height: 0;
@@ -151,6 +213,10 @@ export function injectInlineAgentStyles(): void {
     body.dpp-theme-dark .dpp-agent-step-body {
       color: #e5e7eb;
     }
+    body.dpp-theme-dark .dpp-agent-step-body code,
+    body.dpp-theme-dark .dpp-agent-step-body pre {
+      background: rgba(255, 255, 255, 0.08);
+    }
     body.dpp-theme-dark .dpp-agent-stop-btn:hover {
       background: #1f1f2e;
     }
@@ -167,6 +233,20 @@ export function injectInlineAgentStyles(): void {
     [data-dpp-body-text] ul, [data-dpp-body-text] ol { margin: 3px 0 3px 16px; }
     [data-dpp-body-text] strong { font-weight: 600; }
     [data-dpp-body-text] a { color: var(--ds-blue, #4D6BFE); text-decoration: underline; }
+    [data-dpp-body-text] table {
+      width: 100%;
+      margin: 10px 0;
+      border-collapse: collapse;
+      font-size: 0.95em;
+    }
+    [data-dpp-body-text] th,
+    [data-dpp-body-text] td {
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--dpp-border, #e5e7eb);
+      text-align: left;
+      vertical-align: top;
+    }
+    [data-dpp-body-text] th { font-weight: 600; }
     body.dpp-theme-dark [data-dpp-body-text] {
       color: var(--ds-text, #E5E7EB);
     }
@@ -239,8 +319,21 @@ export function createAgentStepElement(
 }
 
 export function updateStepStreamText(step: HTMLElement, visibleText: string): void {
-  const body = step.querySelector('.dpp-agent-step-body');
-  if (body) body.textContent = visibleText;
+  const body = step.querySelector<HTMLElement>('.dpp-agent-step-body');
+  if (!body) return;
+
+  body.setAttribute('data-dpp-raw-text', visibleText);
+  body.innerHTML = renderInlineMarkdown(visibleText);
+  scrollStepBodyToBottom(body);
+}
+
+function scrollStepBodyToBottom(body: HTMLElement): void {
+  body.scrollTop = body.scrollHeight;
+  if (typeof requestAnimationFrame !== 'function') return;
+
+  requestAnimationFrame(() => {
+    body.scrollTop = body.scrollHeight;
+  });
 }
 
 export function updateStepStatus(step: HTMLElement, status: string, label?: string): void {

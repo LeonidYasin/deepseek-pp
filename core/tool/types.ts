@@ -64,7 +64,9 @@ export interface ToolDescriptor {
 
 export interface ToolCallSource {
   trigger: ToolExecutionTrigger;
+  requestId?: string;
   chatSessionId?: string | null;
+  parentMessageId?: number | null;
   taskId?: string;
   runId?: string;
   messageId?: number | null;

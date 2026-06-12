@@ -63,6 +63,10 @@ import {
   normalizeRestoredToolExecution,
   sanitizeToolExecutionForRestoreStorage,
 } from '../core/tool/execution-restore';
+import {
+  createToolRestoreBlockId,
+  createToolRestoreBlockUrl,
+} from '../core/tool/restore-block';
 import { validateBridgeMessage } from '../core/messaging/schema';
 import { startDeepSeekHistoryOrganizer, type HistoryOrganizerController } from './content/adapters/history-organizer';
 import { startContentUxPolish, type ContentUxPolishController } from './content/adapters/ux-polish';
@@ -96,6 +100,7 @@ const TOKEN_SPEED_BOOTSTRAP_RETRY_MS = 250;
 const TOKEN_SPEED_BOOTSTRAP_RETRY_LIMIT = 40;
 const TOKEN_SPEED_MOUNT_DEBOUNCE_MS = 500;
 const TOKEN_SPEED_ROUTE_CHECK_MS = 500;
+const TOOL_BLOCK_ROUTE_CHECK_MS = 500;
 const TOOL_RESTORE_STORAGE_KEY = 'dpp_tool_execution_blocks';
 const INLINE_AGENT_TRACE_STORAGE_KEY = 'dpp_inline_agent_traces';
 const INLINE_AGENT_TRACE_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -157,8 +162,22 @@ interface PersistedToolBlock extends ToolCallRestoreRecord {
   createdAt: number;
 }
 
+interface ActiveToolBlockSession {
+  id: string;
+  url: string;
+  chatSessionId: string | null;
+  requestId: string | null;
+  parentMessageId: number | null;
+  content: string;
+  executions: ToolExecutionRecord[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 let toolExecutions: ToolExecutionRecord[] = [];
 let toolBlockEl: HTMLElement | null = null;
+let activeToolBlockSessionId: string | null = null;
+const activeToolBlockSessions = new Map<string, ActiveToolBlockSession>();
 let responseGeneration = 0;
 let tokenSpeedEl: HTMLElement | null = null;
 let tokenSpeedBootstrapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -168,6 +187,8 @@ let tokenSpeedMountTimer: ReturnType<typeof setTimeout> | null = null;
 let lastTokenSpeedProgress: ResponseTokenSpeedPayload = createIdleTokenSpeedProgress();
 let tokenSpeedRouteKey = '';
 let tokenSpeedRouteTimer: ReturnType<typeof setInterval> | null = null;
+let toolBlockRouteKey = '';
+let toolBlockRouteTimer: ReturnType<typeof setInterval> | null = null;
 let exportActionObserver: MutationObserver | null = null;
 let exportActionMountTimer: ReturnType<typeof setTimeout> | null = null;
 let exportActionRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -248,7 +269,7 @@ function refreshLocalizedContentSurfaces(): void {
   historyOrganizerController?.refreshLabels();
   contentUxPolishController?.refreshLabels();
   renderTokenSpeedIndicator(lastTokenSpeedProgress);
-  if (toolBlockEl) updateToolBlockContent(toolBlockEl, toolExecutions);
+  renderActiveToolBlockForCurrentRoute();
   scheduleRenderRestoredToolBlocks();
   scheduleRenderRestoredInlineAgentTraces();
 }
@@ -335,10 +356,24 @@ export default defineContentScript({
             const gen = ++responseGeneration;
             await waitForPendingToolExecutions();
             if (gen !== responseGeneration) break;
-            const completedExecutions = [...toolExecutions];
-            if (toolExecutions.length > 0) {
-              await persistToolExecutions(toolExecutions, complete.text);
-              collapseToolBlock();
+            const session = getActiveToolBlockSessionForComplete(complete);
+            const completedExecutions = session ? [...session.executions] : [...toolExecutions];
+            if (session && session.executions.length > 0) {
+              await persistToolBlockSession(session, complete.text, complete);
+              const renderedBlock = (findRestoredToolBlock(session.id) as HTMLElement | null) ?? toolBlockEl;
+              collapseToolBlock(renderedBlock);
+              activeToolBlockSessions.delete(session.id);
+              if (activeToolBlockSessionId === session.id) {
+                activeToolBlockSessionId = null;
+                toolExecutions = [];
+                toolBlockEl = null;
+              }
+            } else if (toolExecutions.length > 0) {
+              const fallbackSession = getCurrentRouteActiveToolBlockSession();
+              if (fallbackSession) {
+                await persistToolBlockSession(fallbackSession, complete.text, complete);
+              }
+              collapseToolBlock(toolBlockEl);
               toolExecutions = [];
               toolBlockEl = null;
             }
@@ -375,6 +410,7 @@ export default defineContentScript({
     startTokenSpeedIndicatorBootstrap();
     startTokenSpeedIndicatorMountObserver();
     startTokenSpeedRouteWatcher();
+    startToolBlockRouteWatcher();
     startConversationExportActionInjector();
     historyOrganizerController = startDeepSeekHistoryOrganizer(getHistoryOrganizerLabels);
     contentUxPolishController = startContentUxPolish(getContentUxPolishLabels);
@@ -637,6 +673,7 @@ function invalidateExtensionContext() {
   stopTokenSpeedIndicatorBootstrap();
   stopTokenSpeedIndicatorMountObserver();
   stopTokenSpeedRouteWatcher();
+  stopToolBlockRouteWatcher();
   removeTokenSpeedIndicator();
   stopConversationExportActionInjector();
   historyOrganizerController?.stop();
@@ -1724,11 +1761,19 @@ function startInlineAgentIfNeeded(
   container.setAttribute('data-dpp-agent-loop-id', loopId);
 
   const messages = getAssistantMessages();
-  const target = messages[messages.length - 1];
+  const anchorContent = getInlineAgentAnchorContent(complete);
+  const target = findInlineAgentLiveTarget(complete, messages, anchorContent);
   if (!target) return;
+  const anchorMessageIndex = messages.indexOf(target);
 
   inlineAgentLoopId = loopId;
-  activeInlineAgentTrace = createInlineAgentTrace(complete, loopId, continuableExecutions.length);
+  activeInlineAgentTrace = createInlineAgentTrace(
+    complete,
+    loopId,
+    continuableExecutions.length,
+    anchorMessageIndex,
+    anchorContent,
+  );
   void writeInlineAgentTrace(activeInlineAgentTrace);
 
   inlineAgentContainer = container;
@@ -1745,6 +1790,23 @@ function startInlineAgentIfNeeded(
   inlineAgentContainerObserver.observe(responseHost, { childList: true });
 
   void startInlineAgentLoop(payload);
+}
+
+function findInlineAgentLiveTarget(
+  complete: ResponseCompletePayload,
+  messages: Element[],
+  anchorContent: string,
+): Element | null {
+  const messageId = complete.assistantMessageId == null ? null : String(complete.assistantMessageId);
+  if (messageId) {
+    const byId = messages.find((message) => elementHasMessageId(message, messageId));
+    if (byId) return byId;
+  }
+
+  const byContent = findAssistantMessageByContentSnippet(messages, anchorContent, new Set());
+  if (byContent) return byContent;
+
+  return messages[messages.length - 1] ?? null;
 }
 
 function stopInlineAgent(): void {
@@ -1985,6 +2047,7 @@ function handleAgentLoopError(msg: InlineAgentLoopErrorMsg): void {
 }
 
 function runToolExecution(call: ToolCall): Promise<ToolCardResult> {
+  const session = getOrCreateActiveToolBlockSession(call);
   const task = executeToolCall(call)
     .catch((err): ToolCardResult => ({
       ok: false,
@@ -1992,8 +2055,12 @@ function runToolExecution(call: ToolCall): Promise<ToolCardResult> {
       detail: err instanceof Error ? err.message : String(err),
     }))
     .then((result) => {
-      toolExecutions.push({ name: call.name, result, provider: call.provider, descriptorId: call.descriptorId });
-      renderToolBlock();
+      const execution = { name: call.name, result, provider: call.provider, descriptorId: call.descriptorId };
+      session.executions.push(execution);
+      activeToolBlockSessionId = session.id;
+      toolExecutions = session.executions;
+      renderToolBlock(session);
+      void persistToolBlockSession(session);
       showPetResult(result);
       return result;
     });
@@ -2019,6 +2086,7 @@ async function waitForPendingToolExecutions() {
 function normalizeResponseCompletePayload(payload: unknown, fallbackText: unknown): ResponseCompletePayload {
   const value = payload && typeof payload === 'object' ? payload as Partial<ResponseCompletePayload> : {};
   return {
+    requestId: typeof value.requestId === 'string' ? value.requestId : '',
     text: typeof value.text === 'string' ? value.text : typeof fallbackText === 'string' ? fallbackText : '',
     originalPrompt: typeof value.originalPrompt === 'string' ? value.originalPrompt : '',
     agentTaskPrompt: typeof value.agentTaskPrompt === 'string' ? value.agentTaskPrompt : '',
@@ -2182,6 +2250,39 @@ function handleTokenSpeedRouteChange() {
   if (resetTokenSpeedOnRouteChange()) {
     renderTokenSpeedIndicator(lastTokenSpeedProgress);
   }
+}
+
+function startToolBlockRouteWatcher() {
+  stopToolBlockRouteWatcher();
+  toolBlockRouteKey = getTokenSpeedRouteKey();
+  window.addEventListener('popstate', handleToolBlockRouteChange);
+  window.addEventListener('hashchange', handleToolBlockRouteChange);
+  toolBlockRouteTimer = setInterval(handleToolBlockRouteChange, TOOL_BLOCK_ROUTE_CHECK_MS);
+}
+
+function stopToolBlockRouteWatcher() {
+  window.removeEventListener('popstate', handleToolBlockRouteChange);
+  window.removeEventListener('hashchange', handleToolBlockRouteChange);
+  if (toolBlockRouteTimer) {
+    clearInterval(toolBlockRouteTimer);
+    toolBlockRouteTimer = null;
+  }
+}
+
+function handleToolBlockRouteChange() {
+  const nextRouteKey = getTokenSpeedRouteKey();
+  if (nextRouteKey === toolBlockRouteKey) return;
+  toolBlockRouteKey = nextRouteKey;
+
+  const activeSession = getActiveToolBlockSession();
+  if (activeSession && !isToolBlockSessionOnCurrentRoute(activeSession)) {
+    toolBlockEl = null;
+    toolExecutions = [];
+  }
+
+  renderActiveToolBlockForCurrentRoute();
+  void restorePersistedToolBlocks();
+  scheduleRenderRestoredToolBlocks();
 }
 
 function resetTokenSpeedOnRouteChange(): boolean {
@@ -2355,14 +2456,29 @@ function getToolBlockUrl(): string {
   return `${location.origin}${location.pathname}${location.search}`;
 }
 
+function getToolBlockUrlForChatSession(chatSessionId: string | null | undefined): string {
+  return createToolRestoreBlockUrl({
+    origin: location.origin,
+    pathname: location.pathname,
+    search: location.search,
+    chatSessionId,
+  });
+}
+
 function normalizeText(value: string | undefined): string {
   return (value ?? '').replace(/\s+/g, '').trim();
+}
+
+function getInlineAgentAnchorContent(complete: ResponseCompletePayload): string {
+  return stripToolCalls(complete.text, { descriptors: currentToolDescriptors }).trim();
 }
 
 function createInlineAgentTrace(
   complete: ResponseCompletePayload,
   loopId: string,
   seedToolCount: number,
+  anchorMessageIndex: number | null,
+  anchorContent: string,
 ): InlineAgentTraceRecord {
   const now = Date.now();
   return {
@@ -2370,7 +2486,9 @@ function createInlineAgentTrace(
     loopId,
     chatSessionId: complete.chatSessionId!,
     anchorMessageId: complete.assistantMessageId!,
-    url: getToolBlockUrl(),
+    anchorMessageIndex,
+    anchorContent,
+    url: getToolBlockUrlForChatSession(complete.chatSessionId),
     originalPrompt: complete.originalPrompt,
     agentTaskPrompt: complete.agentTaskPrompt,
     status: 'running',
@@ -2384,7 +2502,8 @@ function createInlineAgentTrace(
 }
 
 function getInlineAgentStepText(step: HTMLElement): string {
-  return (step.querySelector('.dpp-agent-step-body')?.textContent ?? '').trim();
+  const body = step.querySelector<HTMLElement>('.dpp-agent-step-body');
+  return (body?.getAttribute('data-dpp-raw-text') ?? body?.textContent ?? '').trim();
 }
 
 function updateActiveInlineAgentTrace(
@@ -2475,6 +2594,8 @@ function isInlineAgentTraceRecord(value: unknown): value is InlineAgentTraceReco
     typeof trace.loopId === 'string' &&
     typeof trace.chatSessionId === 'string' &&
     typeof trace.anchorMessageId === 'number' &&
+    (trace.anchorMessageIndex === undefined || trace.anchorMessageIndex === null || typeof trace.anchorMessageIndex === 'number') &&
+    (trace.anchorContent === undefined || typeof trace.anchorContent === 'string') &&
     typeof trace.url === 'string' &&
     typeof trace.createdAt === 'number' &&
     typeof trace.updatedAt === 'number' &&
@@ -2497,6 +2618,7 @@ function sanitizeInlineAgentTraceForStorage(trace: InlineAgentTraceRecord): Inli
     ...trace,
     originalPrompt: clampText(trace.originalPrompt, 8000) ?? '',
     agentTaskPrompt: clampText(trace.agentTaskPrompt, 8000) ?? '',
+    anchorContent: clampText(trace.anchorContent, 8000),
     finalText: clampText(trace.finalText, 8000) ?? '',
     error: clampText(trace.error, 2000),
     steps: trace.steps.map(sanitizeInlineAgentTraceStep),
@@ -2536,13 +2658,8 @@ function normalizeRestoredInlineAgentTrace(trace: InlineAgentTraceRecord): Inlin
 }
 
 function shouldTryRestoreInlineAgentTrace(trace: InlineAgentTraceRecord, currentUrl: string): boolean {
-  if (trace.url === currentUrl) return true;
-
-  try {
-    return new URL(trace.url).origin === location.origin;
-  } catch {
-    return false;
-  }
+  if (trace.chatSessionId) return getCurrentChatSessionId() === trace.chatSessionId;
+  return trace.url === currentUrl;
 }
 
 async function getPersistedToolBlocks(): Promise<PersistedToolBlock[]> {
@@ -2550,34 +2667,107 @@ async function getPersistedToolBlocks(): Promise<PersistedToolBlock[]> {
   return Array.isArray(blocks) ? blocks : [];
 }
 
-async function persistToolExecutions(executions: ToolExecutionRecord[], fullText?: string) {
-  if (executions.length === 0) return;
+function getOrCreateActiveToolBlockSession(call: ToolCall): ActiveToolBlockSession {
+  const chatSessionId = call.source?.chatSessionId ?? null;
+  const parentMessageId = call.source?.parentMessageId ?? null;
+  const requestId = call.source?.requestId ?? null;
+  if (!requestId && !chatSessionId) {
+    const activeSession = getActiveToolBlockSession();
+    if (activeSession && !activeSession.requestId && !activeSession.chatSessionId && isToolBlockSessionOnCurrentRoute(activeSession)) {
+      return activeSession;
+    }
+  }
+
+  const url = getToolBlockUrlForChatSession(chatSessionId);
+  const id = createToolRestoreBlockId({
+    requestId,
+    chatSessionId,
+    parentMessageId,
+    fallbackUrl: url,
+    fallbackSeed: call.raw,
+  });
+
+  const existing = activeToolBlockSessions.get(id);
+  if (existing) return existing;
+
+  const now = Date.now();
+  const session: ActiveToolBlockSession = {
+    id,
+    url,
+    chatSessionId,
+    requestId,
+    parentMessageId,
+    content: '',
+    executions: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  activeToolBlockSessions.set(id, session);
+  return session;
+}
+
+function getActiveToolBlockSessionForComplete(complete: ResponseCompletePayload): ActiveToolBlockSession | null {
+  const chatSessionId = complete.chatSessionId;
+  const url = getToolBlockUrlForChatSession(chatSessionId);
+  const id = createToolRestoreBlockId({
+    requestId: complete.requestId || null,
+    chatSessionId,
+    parentMessageId: complete.parentMessageId,
+    fallbackUrl: url,
+    fallbackSeed: complete.agentTaskPrompt || complete.originalPrompt,
+  });
+
+  return activeToolBlockSessions.get(id) ??
+    (activeToolBlockSessionId ? activeToolBlockSessions.get(activeToolBlockSessionId) ?? null : null);
+}
+
+function getCurrentRouteActiveToolBlockSession(): ActiveToolBlockSession | null {
+  for (const session of activeToolBlockSessions.values()) {
+    if (isToolBlockSessionOnCurrentRoute(session)) return session;
+  }
+  return null;
+}
+
+function getActiveToolBlockSession(): ActiveToolBlockSession | null {
+  return activeToolBlockSessionId ? activeToolBlockSessions.get(activeToolBlockSessionId) ?? null : null;
+}
+
+async function persistToolBlockSession(session: ActiveToolBlockSession, fullText?: string, complete?: ResponseCompletePayload) {
+  if (session.executions.length === 0) return;
 
   const content = fullText ? stripToolCalls(fullText, { descriptors: currentToolDescriptors }) : '';
-  const url = getToolBlockUrl();
-  const id = hashString(`${url}\n${content}\n${JSON.stringify(executions)}`);
+  session.content = content || session.content;
+  session.updatedAt = Date.now();
+
   const block: PersistedToolBlock = {
-    id,
+    id: session.id,
     source: 'storage',
-    url,
-    createdAt: Date.now(),
-    content,
-    executions: executions.map((execution) => sanitizeToolExecutionForRestoreStorage(execution)),
+    url: session.url,
+    createdAt: session.createdAt,
+    content: session.content,
+    executions: session.executions.map((execution) => sanitizeToolExecutionForRestoreStorage(execution)),
     metadata: {
-      toolCount: executions.length,
-      mcpToolCount: executions.filter((execution) => execution.provider?.kind === 'mcp').length,
+      requestId: session.requestId ?? '',
+      chatSessionId: session.chatSessionId ?? '',
+      parentMessageId: session.parentMessageId ?? null,
+      assistantMessageId: complete?.assistantMessageId ?? null,
+      toolCount: session.executions.length,
+      mcpToolCount: session.executions.filter((execution) => execution.provider?.kind === 'mcp').length,
+      updatedAt: session.updatedAt,
     },
   };
 
   const existing = await getPersistedToolBlocks();
   const next = [
-    ...existing.filter((item) => item.id !== id),
+    ...existing.filter((item) => item.id !== block.id),
     block,
   ]
     .filter((item) => Date.now() - item.createdAt < 1000 * 60 * 60 * 24 * 30)
     .slice(-100);
 
   await setLocalStorageValue(TOOL_RESTORE_STORAGE_KEY, next);
+  restoredToolRecords.set(block.id, block);
+  scheduleRenderRestoredToolBlocks();
 }
 
 async function restorePersistedToolBlocks() {
@@ -2591,7 +2781,9 @@ async function restorePersistedToolBlocks() {
 }
 
 function shouldTryRestoreToolBlock(block: PersistedToolBlock, currentUrl: string): boolean {
-  if (block.url === currentUrl) return true;
+  const chatSessionId = getToolRecordChatSessionId(block);
+  if (chatSessionId) return getCurrentChatSessionId() === chatSessionId;
+  if (isToolRecordOnCurrentRoute(block, currentUrl)) return true;
 
   try {
     return new URL(block.url).origin === location.origin;
@@ -2600,19 +2792,136 @@ function shouldTryRestoreToolBlock(block: PersistedToolBlock, currentUrl: string
   }
 }
 
+function isToolRecordOnCurrentRoute(record: ToolCallRestoreRecord, currentUrl = getToolBlockUrl()): boolean {
+  const chatSessionId = getToolRecordChatSessionId(record);
+  if (chatSessionId) return getCurrentChatSessionId() === chatSessionId;
+  return record.url === currentUrl;
+}
+
+function getToolRecordChatSessionId(record: ToolCallRestoreRecord): string | null {
+  const metadataSessionId = record.metadata?.chatSessionId;
+  if (typeof metadataSessionId === 'string' && metadataSessionId) return metadataSessionId;
+  if (!record.url) return null;
+  return getChatSessionIdFromUrl(record.url);
+}
+
+function getToolRecordAssistantMessageId(record: ToolCallRestoreRecord): string | null {
+  return firstMetadataId(record.metadata?.assistantMessageId, record.metadata?.messageId);
+}
+
+function getToolRecordParentMessageId(record: ToolCallRestoreRecord): string | null {
+  return firstMetadataId(record.metadata?.parentMessageId);
+}
+
+function firstMetadataId(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function getChatSessionIdFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url, location.origin);
+    const match = parsed.pathname.match(/\/(?:a\/)?chat\/s\/([^/?#]+)/);
+    if (!match?.[1]) return null;
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
 function rememberRestoredToolRecords(records: ToolCallRestoreRecord[] | undefined) {
   if (!records || records.length === 0) return;
 
   let changed = false;
   for (const record of records) {
-    if (!record.id || restoredToolRecords.has(record.id)) continue;
+    if (!record.id) continue;
+
+    const compatibleId = findCompatibleRestoredToolRecordId(record);
+    if (compatibleId) {
+      const existing = restoredToolRecords.get(compatibleId)!;
+      restoredToolRecords.set(compatibleId, mergeToolRestoreRecords(existing, record));
+      changed = true;
+      continue;
+    }
+
+    if (restoredToolRecords.has(record.id)) continue;
     restoredToolRecords.set(record.id, record);
     changed = true;
   }
 
   if (changed) {
     scheduleRenderRestoredToolBlocks();
+    scheduleRenderRestoredInlineAgentTraces();
   }
+}
+
+function findCompatibleRestoredToolRecordId(record: ToolCallRestoreRecord): string | null {
+  for (const [id, existing] of restoredToolRecords) {
+    if (isCompatibleToolRestoreRecord(existing, record)) return id;
+  }
+  return null;
+}
+
+function isCompatibleToolRestoreRecord(a: ToolCallRestoreRecord, b: ToolCallRestoreRecord): boolean {
+  const aMessageId = getToolRecordAssistantMessageId(a);
+  const bMessageId = getToolRecordAssistantMessageId(b);
+  if (aMessageId && bMessageId && aMessageId === bMessageId) return true;
+
+  const aParentId = getToolRecordParentMessageId(a);
+  const bParentId = getToolRecordParentMessageId(b);
+  if (aParentId && bParentId && aParentId === bParentId && haveMatchingToolSignatures(a, b)) return true;
+
+  const aContent = normalizeText(a.content);
+  const bContent = normalizeText(b.content);
+  return aContent.length >= 12 &&
+    bContent.length >= 12 &&
+    (aContent.includes(bContent.slice(0, 80)) || bContent.includes(aContent.slice(0, 80))) &&
+    haveMatchingToolSignatures(a, b);
+}
+
+function mergeToolRestoreRecords(
+  existing: ToolCallRestoreRecord,
+  incoming: ToolCallRestoreRecord,
+): ToolCallRestoreRecord {
+  return {
+    ...existing,
+    ...incoming,
+    id: existing.id,
+    source: existing.source === 'storage' || incoming.source === 'storage' ? 'storage' : existing.source ?? incoming.source,
+    content: preferNonEmptyText(incoming.content, existing.content),
+    calls: incoming.calls?.length ? incoming.calls : existing.calls,
+    executions: incoming.executions?.length ? incoming.executions : existing.executions,
+    metadata: {
+      ...(existing.metadata ?? {}),
+      ...(incoming.metadata ?? {}),
+    },
+  };
+}
+
+function preferNonEmptyText(primary: string | undefined, fallback: string | undefined): string | undefined {
+  return primary && normalizeText(primary).length > 0 ? primary : fallback;
+}
+
+function haveMatchingToolSignatures(a: ToolCallRestoreRecord, b: ToolCallRestoreRecord): boolean {
+  const aSignature = getToolRecordSignature(a);
+  const bSignature = getToolRecordSignature(b);
+  if (!aSignature || !bSignature) return false;
+  return aSignature === bSignature;
+}
+
+function getToolRecordSignature(record: ToolCallRestoreRecord): string | null {
+  const calls = record.calls;
+  if (calls?.length) {
+    return calls.map((call) => `${call.provider?.id ?? ''}:${call.name}:${JSON.stringify(call.payload)}`).join('|');
+  }
+  const executions = record.executions;
+  if (executions?.length) {
+    return executions.map((execution) => `${execution.provider?.id ?? ''}:${execution.name}`).join('|');
+  }
+  return null;
 }
 
 async function executeToolCall(call: ToolCall): Promise<ToolCardResult> {
@@ -3220,16 +3529,49 @@ function formatToolExecutionName(exec: ToolExecutionRecord): string {
     : exec.name;
 }
 
-function renderToolBlock() {
+function renderActiveToolBlockForCurrentRoute(): void {
+  const session = getCurrentRouteActiveToolBlockSession();
+  if (!session) return;
+
+  activeToolBlockSessionId = session.id;
+  toolExecutions = session.executions;
+  renderToolBlock(session);
+}
+
+function isToolBlockSessionOnCurrentRoute(session: ActiveToolBlockSession): boolean {
+  if (session.chatSessionId) return getCurrentChatSessionId() === session.chatSessionId;
+  return session.url === getToolBlockUrl();
+}
+
+function renderToolBlock(session: ActiveToolBlockSession = getActiveToolBlockSession() ?? {
+  id: '',
+  url: getToolBlockUrl(),
+  chatSessionId: getCurrentChatSessionId(),
+  requestId: null,
+  parentMessageId: null,
+  content: '',
+  executions: toolExecutions,
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+}) {
+  if (session.executions.length === 0) return;
+  if (!isToolBlockSessionOnCurrentRoute(session)) return;
+
   injectToolBlockStyles();
 
-  if (!toolBlockEl) {
-    toolBlockEl = createToolBlockShell({ id: TOOL_BLOCK_ID });
-    placeToolBlock(toolBlockEl);
+  const existing = findRestoredToolBlock(session.id) as HTMLElement | null;
+  if (existing) {
+    toolBlockEl = existing;
+  } else if (!toolBlockEl || toolBlockEl.getAttribute('data-dpp-tool-key') !== session.id) {
+    toolBlockEl = createToolBlockShell({ id: TOOL_BLOCK_ID, restoreId: session.id });
+  }
+
+  if (!toolBlockEl.isConnected) {
+    placeToolBlock(toolBlockEl, () => isToolBlockSessionOnCurrentRoute(session));
   }
 
   cleanRenderedToolCalls();
-  updateToolBlockContent(toolBlockEl, toolExecutions);
+  updateToolBlockContent(toolBlockEl, session.executions);
 }
 
 function scheduleRenderRestoredToolBlocks() {
@@ -3313,8 +3655,8 @@ function renderRestoredInlineAgentTraces(): number {
     }
 
     const container = createRestoredInlineAgentContainer(trace);
-    mountRestoredInlineAgentContainer(target.message, container, target.hideHostContent);
-    usedMessages.add(target.message);
+    mountRestoredInlineAgentContainer(target, container);
+    usedMessages.add(target);
   }
 
   return missing;
@@ -3331,33 +3673,78 @@ function findRestoredInlineAgentTarget(
   trace: InlineAgentTraceRecord,
   messages: Element[],
   usedMessages: Set<Element>,
-): { message: Element; hideHostContent: boolean } | null {
-  const snippet = getInlineAgentTraceMatchSnippet(trace);
-  if (snippet.length >= 12) {
-    const matched = messages.find((message) => {
-      if (usedMessages.has(message)) return false;
-      return normalizeText(message.textContent ?? '').includes(snippet);
-    });
-    if (matched) return { message: matched, hideHostContent: true };
-  }
+): Element | null {
+  const anchored = findInlineAgentTargetByAnchor(trace, messages, usedMessages);
+  if (anchored) return anchored;
 
-  if (trace.url === getToolBlockUrl()) {
-    const fallback = [...messages].reverse().find((message) => !usedMessages.has(message));
-    if (fallback) return { message: fallback, hideHostContent: false };
+  return null;
+}
+
+function findInlineAgentTargetByAnchor(
+  trace: InlineAgentTraceRecord,
+  messages: Element[],
+  usedMessages: Set<Element>,
+): Element | null {
+  const messageId = String(trace.anchorMessageId);
+  const byId = messages.find((message) => {
+    if (usedMessages.has(message)) return false;
+    return elementHasMessageId(message, messageId);
+  });
+  if (byId) return byId;
+
+  const byContent = findAssistantMessageByContentSnippet(messages, trace.anchorContent ?? '', usedMessages);
+  if (byContent) return byContent;
+
+  const byToolRecord = findInlineAgentTargetByToolRecord(trace, messages, usedMessages);
+  if (byToolRecord) return byToolRecord;
+
+  if (normalizeText(trace.anchorContent).length >= 12) return null;
+
+  const index = typeof trace.anchorMessageIndex === 'number' && Number.isInteger(trace.anchorMessageIndex)
+    ? trace.anchorMessageIndex
+    : null;
+  if (index === null || index < 0) return null;
+
+  const byIndex = messages[index];
+  if (!byIndex || usedMessages.has(byIndex)) return null;
+  return byIndex;
+}
+
+function findInlineAgentTargetByToolRecord(
+  trace: InlineAgentTraceRecord,
+  messages: Element[],
+  usedMessages: Set<Element>,
+): Element | null {
+  const anchorMessageId = String(trace.anchorMessageId);
+  for (const record of restoredToolRecords.values()) {
+    const recordMessageId = getToolRecordAssistantMessageId(record);
+    if (recordMessageId !== anchorMessageId) continue;
+
+    const byContent = findAssistantMessageByContentSnippet(messages, record.content ?? '', usedMessages);
+    if (byContent) return byContent;
+
+    const byId = findRestoredToolTargetByMessageId(record, messages, usedMessages);
+    if (byId) return byId;
+
+    const byIndex = findRestoredToolTargetByAssistantIndex(record, messages, usedMessages);
+    if (byIndex) return byIndex;
   }
 
   return null;
 }
 
-function getInlineAgentTraceMatchSnippet(trace: InlineAgentTraceRecord): string {
-  const finalText = normalizeText(trace.finalText);
-  if (finalText) return finalText.slice(0, 100);
+function findAssistantMessageByContentSnippet(
+  messages: Element[],
+  content: string,
+  usedMessages: Set<Element>,
+): Element | null {
+  const snippet = normalizeText(content).slice(0, 100);
+  if (snippet.length < 12) return null;
 
-  const lastText = [...trace.steps]
-    .reverse()
-    .map((step) => normalizeText(step.text))
-    .find((text) => text.length > 0);
-  return (lastText ?? '').slice(0, 100);
+  return messages.find((message) => {
+    if (usedMessages.has(message)) return false;
+    return normalizeText(message.textContent ?? '').includes(snippet);
+  }) ?? null;
 }
 
 function createRestoredInlineAgentContainer(trace: InlineAgentTraceRecord): HTMLElement {
@@ -3402,16 +3789,8 @@ function getInlineAgentStepStatusLabel(step: InlineAgentTraceStepRecord): string
 function mountRestoredInlineAgentContainer(
   message: Element,
   container: HTMLElement,
-  hideHostContent: boolean,
 ): void {
   const host = getAssistantResponseHost(message);
-
-  if (hideHostContent) {
-    host.setAttribute('data-dpp-agent-host-hidden', 'true');
-    host.prepend(container);
-    return;
-  }
-
   host.appendChild(container);
 }
 
@@ -3520,7 +3899,10 @@ function findRestoredToolTarget(
 ): Element | null {
   const content = normalizeText(record.content);
   const snippet = content.slice(0, 80);
-  const isSameUrl = record.url === getToolBlockUrl();
+  const isSameRoute = isToolRecordOnCurrentRoute(record);
+
+  const messageIdMatched = findRestoredToolTargetByMessageId(record, messages, usedMessages);
+  if (messageIdMatched) return messageIdMatched;
 
   if (snippet.length >= 12) {
     const matched = messages.find((message) => {
@@ -3530,12 +3912,66 @@ function findRestoredToolTarget(
     if (matched) return matched;
   }
 
+  const indexed = findRestoredToolTargetByAssistantIndex(record, messages, usedMessages);
+  if (indexed) return indexed;
+
+  if (!isSameRoute) return null;
+
   if (record.source === 'storage') {
-    if (!isSameUrl) return null;
-    return [...messages].reverse().find((message) => !usedMessages.has(message)) ?? null;
+    return null;
   }
 
   return messages.find((message) => !usedMessages.has(message)) ?? null;
+}
+
+function findRestoredToolTargetByMessageId(
+  record: ToolCallRestoreRecord,
+  messages: Element[],
+  usedMessages: Set<Element>,
+): Element | null {
+  const messageId = getToolRecordAssistantMessageId(record);
+  if (!messageId) return null;
+
+  return messages.find((message) => {
+    if (usedMessages.has(message)) return false;
+    return elementHasMessageId(message, messageId);
+  }) ?? null;
+}
+
+function findRestoredToolTargetByAssistantIndex(
+  record: ToolCallRestoreRecord,
+  messages: Element[],
+  usedMessages: Set<Element>,
+): Element | null {
+  const assistantMessageIndex = getToolRecordAssistantMessageIndex(record);
+  if (assistantMessageIndex === null) return null;
+
+  const message = messages[assistantMessageIndex];
+  if (!message || usedMessages.has(message)) return null;
+  return message;
+}
+
+function getToolRecordAssistantMessageIndex(record: ToolCallRestoreRecord): number | null {
+  const value = record.metadata?.assistantMessageIndex;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function elementHasMessageId(element: Element, messageId: string): boolean {
+  const candidates = [
+    element,
+    ...Array.from(element.querySelectorAll('[data-message-id], [data-messageid], [data-id], [data-ds-message-id], [id]')),
+  ];
+
+  return candidates.some((candidate) => {
+    const attributes = [
+      candidate.getAttribute('data-message-id'),
+      candidate.getAttribute('data-messageid'),
+      candidate.getAttribute('data-id'),
+      candidate.getAttribute('data-ds-message-id'),
+      candidate.getAttribute('id'),
+    ];
+    return attributes.some((value) => value === messageId || value?.endsWith(`-${messageId}`));
+  });
 }
 
 function startRenderedToolCallCleaner() {
@@ -3698,20 +4134,21 @@ function pruneEmptyToolContainers(start: HTMLElement, boundary: Element) {
   }
 }
 
-function collapseToolBlock() {
-  if (toolBlockEl) {
-    setTimeout(() => {
-      toolBlockEl?.setAttribute('data-collapsed', 'true');
-    }, 1500);
-  }
+function collapseToolBlock(block: HTMLElement | null = toolBlockEl) {
+  if (!block) return;
+  block.removeAttribute('id');
+  setTimeout(() => {
+    block.setAttribute('data-collapsed', 'true');
+  }, 1500);
 }
 
 function appendToolBlockToMessage(message: Element, block: HTMLElement) {
   getAssistantResponseHost(message).appendChild(block);
 }
 
-function placeToolBlock(block: HTMLElement) {
+function placeToolBlock(block: HTMLElement, canPlace: () => boolean = () => true) {
   const tryPlace = () => {
+    if (!canPlace()) return false;
     // Find last assistant message container
     const messages = getAssistantMessages();
     if (messages.length === 0) return false;

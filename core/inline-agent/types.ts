@@ -58,6 +58,8 @@ export interface InlineAgentTraceRecord {
   loopId: string;
   chatSessionId: string;
   anchorMessageId: number;
+  anchorMessageIndex?: number | null;
+  anchorContent?: string;
   url: string;
   originalPrompt: string;
   agentTaskPrompt: string;

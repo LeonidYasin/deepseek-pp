@@ -57,16 +57,22 @@ function stripMessageToolCalls(
   restoredRecords: ToolCallRestoreRecord[],
   toolDescriptors: readonly ToolDescriptor[],
 ) {
-  const visibleMessages = messages.filter((msg: any) => !isInternalManagedAgentMessage(msg));
+  const visibleMessages = messages.filter((msg: any) => !isRemovableInternalManagedAgentMessage(msg));
   if (visibleMessages.length !== messages.length) {
     messages.splice(0, messages.length, ...visibleMessages);
   }
 
+  let assistantMessageIndex = 0;
   visibleMessages.forEach((msg: any, index: number) => {
+    sanitizeInlineAgentContinuationMessage(msg);
     sanitizeStoredMessageInternalPrompt(msg);
+    const hasStoredToolCall = storedMessageHasToolCallMarker(msg, toolDescriptors);
+    const isAssistant = isAssistantStoredMessage(msg) || hasStoredToolCall;
+    const currentAssistantMessageIndex = isAssistant ? assistantMessageIndex++ : null;
+    const metadata = createMessageRestoreMetadata(msg, index, currentAssistantMessageIndex);
     const messageKey = getMessageRestoreKey(msg, index);
     if (typeof msg.content === 'string' && hasToolCallMarker(msg.content, toolDescriptors)) {
-      const record = collectToolCallRestoreRecord(msg.content, `${messageKey}:content`, toolDescriptors);
+      const record = collectToolCallRestoreRecord(msg.content, `${messageKey}:content`, toolDescriptors, metadata);
       if (record) restoredRecords.push(record);
       msg.content = stripToolCalls(msg.content, { descriptors: toolDescriptors });
     }
@@ -77,6 +83,7 @@ function stripMessageToolCalls(
             frag.content,
             `${messageKey}:fragment:${fragIndex}`,
             toolDescriptors,
+            metadata,
           );
           if (record) restoredRecords.push(record);
           frag.content = stripToolCalls(frag.content, { descriptors: toolDescriptors });
@@ -104,10 +111,42 @@ function getMessageRestoreKey(msg: any, index: number): string {
   return String(msg?.id ?? msg?.message_id ?? msg?.uuid ?? msg?.parent_message_id ?? index);
 }
 
+function createMessageRestoreMetadata(
+  msg: any,
+  messageIndex: number,
+  assistantMessageIndex: number | null,
+): Record<string, unknown> {
+  return {
+    messageId: msg?.id ?? msg?.message_id ?? msg?.messageId ?? msg?.uuid ?? null,
+    parentMessageId: msg?.parent_id ?? msg?.parent_message_id ?? msg?.parentMessageId ?? null,
+    messageIndex,
+    assistantMessageIndex,
+    role: firstString(msg?.message_role, msg?.role, msg?.type),
+  };
+}
+
+function storedMessageHasToolCallMarker(msg: any, toolDescriptors: readonly ToolDescriptor[]): boolean {
+  if (typeof msg?.content === 'string' && hasToolCallMarker(msg.content, toolDescriptors)) return true;
+  if (!Array.isArray(msg?.fragments)) return false;
+  return msg.fragments.some((frag: any) => typeof frag?.content === 'string' && hasToolCallMarker(frag.content, toolDescriptors));
+}
+
+function isAssistantStoredMessage(msg: any): boolean {
+  return firstString(msg?.message_role, msg?.role, msg?.type)?.toLowerCase() === 'assistant';
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return null;
+}
+
 function collectToolCallRestoreRecord(
   text: string,
   key: string,
   toolDescriptors: readonly ToolDescriptor[],
+  metadata: Record<string, unknown>,
 ): ToolCallRestoreRecord | null {
   if (!hasToolCallMarker(text, toolDescriptors)) return null;
 
@@ -121,6 +160,7 @@ function collectToolCallRestoreRecord(
     calls,
     content,
     source: 'history',
+    metadata,
   };
 }
 
@@ -159,11 +199,52 @@ function isInternalManagedAgentMessage(msg: any): boolean {
   return msg.fragments.some((frag: any) => typeof frag?.content === 'string' && isInternalManagedAgentContent(frag.content));
 }
 
+function isRemovableInternalManagedAgentMessage(msg: any): boolean {
+  return isInternalManagedAgentMessage(msg) && !isInlineAgentContinuationMessage(msg);
+}
+
+function isInlineAgentContinuationMessage(msg: any): boolean {
+  if (!msg || typeof msg !== 'object') return false;
+  if (typeof msg.content === 'string' && isInlineAgentContinuationPrompt(msg.content)) return true;
+  if (!Array.isArray(msg.fragments)) return false;
+  return msg.fragments.some((frag: any) => typeof frag?.content === 'string' && isInlineAgentContinuationPrompt(frag.content));
+}
+
+function sanitizeInlineAgentContinuationMessage(msg: any) {
+  if (!isInlineAgentContinuationMessage(msg)) return;
+
+  if (typeof msg.content === 'string' && isInlineAgentContinuationPrompt(msg.content)) {
+    msg.content = '\u200b';
+  }
+
+  if (!Array.isArray(msg.fragments)) return;
+
+  let replaced = false;
+  for (const frag of msg.fragments) {
+    if (!frag || typeof frag.content !== 'string' || !isInlineAgentContinuationPrompt(frag.content)) continue;
+    frag.content = replaced ? '' : '\u200b';
+    replaced = true;
+  }
+}
+
 function isInternalManagedAgentContent(content: string): boolean {
   if (content.includes(DPP_MANAGED_AGENT_PROMPT_MARKER)) return true;
   if (content.includes('DeepSeek++ 托管 Agent Runner') && content.includes('<tool_results>')) return true;
+  if (isInlineAgentContinuationPrompt(content)) return true;
   return content.includes('Tool call format reminder:') &&
     content.includes('Available tool tag names:') &&
     content.includes('<original_user_task>') &&
     content.includes('</original_user_task>');
+}
+
+function isInlineAgentContinuationPrompt(content: string): boolean {
+  if (!content.includes('<original_task>') || !content.includes('</original_task>')) return false;
+  if (!content.includes('<tool_results>') && !content.includes('<tool_results_so_far>')) return false;
+
+  return content.includes('工具续跑任务') ||
+    content.includes('工具结果') ||
+    content.includes('Continue like a real agent') ||
+    content.includes('tool results') ||
+    content.includes('do not call any tools') ||
+    content.includes('不要调用任何工具');
 }

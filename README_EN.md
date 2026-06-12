@@ -274,7 +274,8 @@ npm run shell:install -- --browser chrome --extension-id <extension-id>
 | Project context | Organize repositories, pages, local files, and manual notes as reusable project material, then attach only the relevant slices to each task. |
 | Downloadable artifacts | Create single files or project bundles for scripts, Markdown, JSON, HTML, small prototypes, and documentation sets. |
 | Interactive tools | Sandbox approvals, Skill draft review, memory-import preview, saved snippets, and prompt controls make multi-step work easier to inspect, revise, and steer. |
-| Workspace flow | Side-panel chat, right-click scenarios, official API Key setup, restored tool results, and page navigation keep execution feedback clearer after refresh. |
+| Workspace flow | Side-panel chat, right-click scenarios, official API Key setup, restored tool results, and page navigation keep tool blocks and Agent run blocks attached to the right reply after refresh. |
+| Agent feedback | Agent step output now streams with Markdown rendering, so tables, headings, and emphasis take shape while the answer is generated, and long outputs follow the newest progress automatically. |
 | Review and reuse | Saved items, history tags/search, code-block downloads, single-message export, and image attachment manifests make conversation material easier to organize and reuse. |
 | Release quality | Update notices stay dismissed per version; release checks continue to cover bilingual runtime, local tools, MCP, automation, multi-browser packages, and release assets. |
 

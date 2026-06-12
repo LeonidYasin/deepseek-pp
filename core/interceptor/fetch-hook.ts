@@ -1,5 +1,5 @@
 import { DEEPSEEK_API_URL } from '../constants';
-import type { ToolCall, ToolCallRestoreRecord, ToolDescriptor } from '../types';
+import type { ToolCall, ToolCallRestoreRecord, ToolCallSource, ToolDescriptor } from '../types';
 import { sanitizeInternalPromptText } from '../prompt';
 import {
   DEFAULT_TOOL_DESCRIPTORS,
@@ -68,6 +68,7 @@ export function installFetchHook() {
 }
 
 export interface ResponseCompletePayload {
+  requestId: string;
   text: string;
   originalPrompt: string;
   agentTaskPrompt: string;
@@ -85,6 +86,7 @@ export interface ResponseCompletePayload {
 export type { ResponseTokenSpeedPayload } from './token-speed';
 
 interface RequestContext {
+  requestId: string;
   originalPrompt: string;
   agentTaskPrompt: string;
   chatSessionId: string | null;
@@ -93,6 +95,7 @@ interface RequestContext {
 }
 
 interface RequestContextOverrides {
+  requestId?: string;
   originalPrompt?: string;
   agentTaskPrompt?: string;
 }
@@ -126,6 +129,7 @@ function hookFetch() {
     const modified = await hookState.onRequestBody(init.body);
     const requestBody = modified?.body ?? init.body;
     const requestContext = createRequestContext(requestBody, {
+      requestId: originalContext.requestId,
       originalPrompt: originalContext.originalPrompt,
       agentTaskPrompt: modified?.agentTaskPrompt ?? originalContext.agentTaskPrompt,
     });
@@ -163,6 +167,7 @@ function hookXHR() {
         const modified = await hookState.onRequestBody(body);
         const requestBody = modified?.body ?? body;
         setupXHRResponseInterceptor(xhr, createRequestContext(requestBody, {
+          requestId: originalContext.requestId,
           originalPrompt: originalContext.originalPrompt,
           agentTaskPrompt: modified?.agentTaskPrompt ?? originalContext.agentTaskPrompt,
         }));
@@ -235,6 +240,7 @@ async function waitForInitialHookState(): Promise<void> {
 }
 
 function createRequestContext(bodyStr: string, overrides: RequestContextOverrides = {}): RequestContext {
+  const requestId = overrides.requestId ?? crypto.randomUUID();
   try {
     const body = JSON.parse(bodyStr) as Record<string, unknown>;
     const bodyPrompt = typeof body.prompt === 'string' ? body.prompt : '';
@@ -244,6 +250,7 @@ function createRequestContext(bodyStr: string, overrides: RequestContextOverride
         ? body.prompt
         : '';
     return {
+      requestId,
       originalPrompt,
       agentTaskPrompt: overrides.agentTaskPrompt ?? bodyPrompt,
       chatSessionId: typeof body.chat_session_id === 'string' ? body.chat_session_id : null,
@@ -257,6 +264,7 @@ function createRequestContext(bodyStr: string, overrides: RequestContextOverride
     };
   } catch {
     return {
+      requestId,
       originalPrompt: overrides.originalPrompt ?? '',
       agentTaskPrompt: overrides.agentTaskPrompt ?? overrides.originalPrompt ?? '',
       chatSessionId: null,
@@ -300,12 +308,26 @@ function notifyNewToolCalls(
   fullText: string,
   alreadyNotified: number,
   descriptors: readonly ToolDescriptor[] = hookState.toolDescriptors,
+  source?: ToolCallSource,
 ): number {
   const calls = extractToolCalls(fullText, { descriptors });
   for (let i = alreadyNotified; i < calls.length; i++) {
-    hookState.onToolCall(calls[i]);
+    hookState.onToolCall(source ? { ...calls[i], source } : calls[i]);
   }
   return calls.length;
+}
+
+function createManualChatToolCallSource(
+  requestContext: RequestContext,
+  assistantMessageId: number | null,
+): ToolCallSource {
+  return {
+    trigger: 'manual_chat',
+    requestId: requestContext.requestId,
+    chatSessionId: requestContext.chatSessionId,
+    parentMessageId: requestContext.parentMessageId,
+    messageId: assistantMessageId,
+  };
 }
 
 // --- SSE stream interception: strip XML tool-call blocks from text events ---
@@ -861,12 +883,18 @@ async function interceptFetchResponse(
     for (const event of events) {
       const parsed = parseSSEData(event.data);
       if (!parsed) continue;
+      assistantMessageId = collectAssistantMessageId(parsed, assistantMessageId);
       const eventText = extractCleanResponseTextForParsing(parsed);
       if (eventText) {
         fullText += eventText;
         speedTracker.append(eventText);
         if (toolCallScanGate.shouldScanChunk(eventText)) {
-          notifiedCount = notifyNewToolCalls(fullText, notifiedCount, toolDescriptors);
+          notifiedCount = notifyNewToolCalls(
+            fullText,
+            notifiedCount,
+            toolDescriptors,
+            createManualChatToolCallSource(requestContext, assistantMessageId),
+          );
         }
       } else if (isThinkingPatchPath((parsed as any)?.p) && typeof (parsed as any)?.v === 'string') {
         speedTracker.append((parsed as any).v);
@@ -874,7 +902,6 @@ async function interceptFetchResponse(
       if (isStreamFinishedFromParsed(parsed)) {
         speedTracker.finish();
       }
-      assistantMessageId = collectAssistantMessageId(parsed, assistantMessageId);
     }
   };
 
@@ -892,17 +919,22 @@ async function interceptFetchResponse(
               for (const event of events) {
                 const parsed = parseSSEData(event.data);
                 if (!parsed) continue;
+                assistantMessageId = collectAssistantMessageId(parsed, assistantMessageId);
                 const eventText = extractCleanResponseTextForParsing(parsed);
                 if (eventText) {
                   fullText += eventText;
                   speedTracker.append(eventText);
                   if (toolCallScanGate.shouldScanChunk(eventText)) {
-                    notifiedCount = notifyNewToolCalls(fullText, notifiedCount, toolDescriptors);
+                    notifiedCount = notifyNewToolCalls(
+                      fullText,
+                      notifiedCount,
+                      toolDescriptors,
+                      createManualChatToolCallSource(requestContext, assistantMessageId),
+                    );
                   }
                 } else if (isThinkingPatchPath((parsed as any)?.p) && typeof (parsed as any)?.v === 'string') {
                   speedTracker.append((parsed as any).v);
                 }
-                assistantMessageId = collectAssistantMessageId(parsed, assistantMessageId);
               }
               textAccBuffer = '';
             }
@@ -926,12 +958,16 @@ async function interceptFetchResponse(
         if (calls.length > 0) {
           for (const call of calls.slice(notifiedCount)) {
             if (cancelled) break;
-            hookState.onToolCall(call);
+            hookState.onToolCall({
+              ...call,
+              source: createManualChatToolCallSource(requestContext, assistantMessageId),
+            });
           }
         }
 
         if (!cancelled) {
           hookState.onResponseComplete({
+            requestId: requestContext.requestId,
             text: fullText,
             originalPrompt: requestContext.originalPrompt,
             agentTaskPrompt: requestContext.agentTaskPrompt,
@@ -977,9 +1013,15 @@ function setupXHRResponseInterceptor(xhr: XMLHttpRequest, requestContext: Reques
   const finalizeIfNeeded = () => {
     if (completed) return;
     completed = true;
-    notifiedCount = notifyNewToolCalls(fullText, notifiedCount, toolDescriptors);
+    notifiedCount = notifyNewToolCalls(
+      fullText,
+      notifiedCount,
+      toolDescriptors,
+      createManualChatToolCallSource(requestContext, assistantMessageId),
+    );
     speedTracker.finish();
     hookState.onResponseComplete({
+      requestId: requestContext.requestId,
       text: fullText,
       originalPrompt: requestContext.originalPrompt,
       agentTaskPrompt: requestContext.agentTaskPrompt,
@@ -1011,18 +1053,23 @@ function setupXHRResponseInterceptor(xhr: XMLHttpRequest, requestContext: Reques
         for (const event of events) {
           const parsed = parseSSEData(event.data);
           if (!parsed) continue;
+          assistantMessageId = collectAssistantMessageId(parsed, assistantMessageId);
           const text = extractCleanResponseTextForParsing(parsed);
           if (text) {
             fullText += text;
             speedTracker.append(text);
             if (toolCallScanGate.shouldScanChunk(text)) {
-              notifiedCount = notifyNewToolCalls(fullText, notifiedCount, toolDescriptors);
+              notifiedCount = notifyNewToolCalls(
+                fullText,
+                notifiedCount,
+                toolDescriptors,
+                createManualChatToolCallSource(requestContext, assistantMessageId),
+              );
             }
           }
           if (isStreamFinishedFromParsed(parsed)) {
             speedTracker.finish();
           }
-          assistantMessageId = collectAssistantMessageId(parsed, assistantMessageId);
         }
         // Filter for frontend
         filter.processChunk(newData, fakeController);

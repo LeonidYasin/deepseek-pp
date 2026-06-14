@@ -40,15 +40,17 @@ def smart_parse_errors(run_id, repo):
             print(line)
     print("=============================================================")
 
-# --- ШАГ 0: Динамически определяем форк ---
-repo_view = run_command_capture("gh repo view --json owner,name")
-try:
-    repo_data = json.loads(repo_view.stdout)
-    TARGET_REPO = f"{repo_data['owner']['login']}/{repo_data['name']}"
-    print(f"🎯 Определён целевой репозиторий: {TARGET_REPO}")
-except Exception as e:
-    print(f"❌ Ошибка определения репозитория: {e}")
-    print(f"Сырой вывод gh repo view: {repo_view.stdout or repo_view.stderr}")
+# --- ЖЕСТКОЕ И НАДЕЖНОЕ ОПРЕДЕЛЕНИЕ ТВОЕГО РЕПОЗИТОРИЯ ИЗ GIT REMOTE ---
+remote_res = run_command_capture("git remote get-url origin")
+remote_url = remote_res.stdout.strip()
+
+# Вытаскиваем "owner/repo" из форматов https://github.com/owner/repo.git или git@github.com:owner/repo.git
+match = re.search(r"github\.com[:/](.+?)(?:\.git)?$", remote_url)
+if match:
+    TARGET_REPO = match.group(1)
+    print(f"🎯 Настоящий целевой репозиторий (из Git): {TARGET_REPO}")
+else:
+    print(f"❌ Не удалось распарсить Git remote URL: {remote_url}")
     sys.exit(1)
 
 print("\n🔍 [ЭТАП 1] Подготовка локального Git...")
@@ -87,11 +89,10 @@ for attempt in range(25):
     try:
         runs = json.loads(res.stdout)
         if runs:
-            print(f"📋 Найдено сборок в списке: {len(runs)}")
+            print(f"📋 Найдено сборок в твоем репо: {len(runs)}")
             for idx, run in enumerate(runs):
                 print(f"  [{idx}] ID: {run['databaseId']} | Workflow: {run['workflowName']} | Status: {run['status']} | Conclusion: {run.get('conclusion')} | Created: {run['createdAt']}")
                 
-                # Проверяем, подходит ли сборка под активную
                 if run["status"] in ["in_progress", "queued", "waiting"]:
                     run_id = run["databaseId"]
                     wf_name = run["workflowName"]
@@ -108,15 +109,15 @@ for attempt in range(25):
     time.sleep(4)
 
 if not run_id:
-    print("\n⚠️ Активный процесс не поймался по статусу за все попытки. Пробуем взять самый верхний принудительно:")
+    print("\n⚠️ Активный процесс не поймался по статусу. Пробуем взять самый верхний принудительно:")
     cmd = f"gh run list --repo={TARGET_REPO} --limit 1 --json databaseId"
     try:
         res = json.loads(run_command_capture(cmd).stdout)
         if res:
             run_id = res[0]["databaseId"]
-            print(f"🎯 Подключились вслепую к верхнему ID: {run_id}")
+            print(f"🎯 Подключились к верхнему ID: {run_id}")
     except Exception as e:
-        print(f"❌ Сборок в репозитории вообще не найдено через API: {e}")
+        print(f"❌ Сборок в репозитории вообще не найдено: {e}")
         sys.exit(1)
 
 print("\n🔄 [ЭТАП 5] Подключение к трансляции логов сервера...")

@@ -1,0 +1,43 @@
+name: Build from Android Folder
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'android/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        packages: 'platforms;android-33 build-tools;33.0.0'
+    
+    - name: Create local.properties
+      run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+    
+    - name: Grant execute permission
+      run: chmod +x android/gradlew
+    
+    - name: Build Debug APK
+      run: |
+        cd android
+        ./gradlew assembleDebug --stacktrace --no-daemon
+    
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: deepseek-debug-apk
+        path: android/app/build/outputs/apk/debug/*.apk

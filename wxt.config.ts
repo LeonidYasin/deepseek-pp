@@ -145,7 +145,7 @@ export default defineConfig({
     if (isChromium) {
       userManifest.host_permissions = ['https://*.deepseek.com/*'];
       if (userManifest.web_accessible_resources?.[0]) {
-        userManifest.web_accessible_resources[0].matches = ['https://*.deepseek.com/*'];
+        ((userManifest.web_accessible_resources[0] as any).matches) = ['https://*.deepseek.com/*'];
       }
     } else {
       userManifest.permissions?.push('https://*.deepseek.com/*');

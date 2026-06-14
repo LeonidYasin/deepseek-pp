@@ -33,4 +33,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: deepseek-pp-ci-build
-          path: .output/*
+          path: .output/

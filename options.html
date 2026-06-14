@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>DeepSeek++ Settings</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h2 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        .setting-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #5a67d8;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        .mcp-server {
+            border-left: 4px solid #667eea;
+            padding-left: 15px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚙️ DeepSeek++ Settings</h1>
+        <p>Управление MCP серверами и настройками расширения</p>
+    </div>
+
+    <div class="card">
+        <h2>🔌 MCP Servers</h2>
+        <div id="mcpServers">
+            <div class="mcp-server">
+                <h3>Shell Local (Native)</h3>
+                <p>Статус: <span id="shellStatus">Проверка...</span></p>
+                <button id="testShellBtn">Test Connection</button>
+            </div>
+            <div class="mcp-server">
+                <h3>Custom HTTP Server</h3>
+                <div class="setting-group">
+                    <label>Server URL:</label>
+                    <input type="text" id="customServerUrl" placeholder="http://localhost:3000/mcp">
+                </div>
+                <div class="setting-group">
+                    <label>Server Name:</label>
+                    <input type="text" id="customServerName" placeholder="My MCP Server">
+                </div>
+                <button id="addCustomServer">➕ Add Server</button>
+                <button id="testCustomServer">🔍 Test Connection</button>
+                <div id="customServerStatus"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🔐 GitHub Integration</h2>
+        <div class="setting-group">
+            <label>GitHub Token (optional, for API access):</label>
+            <input type="password" id="githubToken" placeholder="ghp_...">
+        </div>
+        <button id="saveGithubToken">Save Token</button>
+        <button id="checkGithubAuth">Check Auth Status</button>
+        <div id="githubStatus"></div>
+    </div>
+
+    <div class="card">
+        <h2>🎨 Appearance</h2>
+        <div class="setting-group">
+            <label>Theme:</label>
+            <select id="theme">
+                <option value="auto">Auto (System)</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>⚡ Advanced</h2>
+        <div class="setting-group">
+            <label>MCP Injection Strategy:</label>
+            <select id="injectionStrategy">
+                <option value="auto">Auto</option>
+                <option value="manual">Manual (current)</option>
+                <option value="always">Always</option>
+            </select>
+        </div>
+        <div class="setting-group">
+            <label>Request Timeout (ms):</label>
+            <input type="number" id="timeout" value="30000">
+        </div>
+        <button id="saveAdvanced">Save Advanced Settings</button>
+    </div>
+
+    <div class="card">
+        <h2>ℹ️ About</h2>
+        <p><strong>DeepSeek++ Extension</strong></p>
+        <p>Version: <span id="version">0.7.2</span></p>
+        <p>MCP Protocol: 0.1.0</p>
+        <p>For issues, visit: <a href="#" id="repoLink">GitHub Repository</a></p>
+        <button id="exportSettings">Export Settings</button>
+        <button id="importSettings">Import Settings</button>
+        <button id="resetSettings">Reset to Default</button>
+    </div>
+
+    <script>
+        // Load saved settings
+        async function loadSettings() {
+            const settings = await chrome.storage.sync.get([
+                'customServerUrl',
+                'customServerName',
+                'githubToken',
+                'theme',
+                'injectionStrategy',
+                'timeout'
+            ]);
+            
+            document.getElementById('customServerUrl').value = settings.customServerUrl || '';
+            document.getElementById('customServerName').value = settings.customServerName || 'Custom MCP Server';
+            document.getElementById('githubToken').value = settings.githubToken || '';
+            document.getElementById('theme').value = settings.theme || 'auto';
+            document.getElementById('injectionStrategy').value = settings.injectionStrategy || 'manual';
+            document.getElementById('timeout').value = settings.timeout || 30000;
+        }
+
+        // Save settings
+        document.getElementById('addCustomServer').addEventListener('click', async () => {
+            const url = document.getElementById('customServerUrl').value;
+            const name = document.getElementById('customServerName').value;
+            if (url) {
+                await chrome.storage.sync.set({ customServerUrl: url, customServerName: name });
+                showStatus('customServerStatus', '✅ Server configuration saved', 'success');
+                // Notify background script
+                chrome.runtime.sendMessage({ type: 'updateMCPServer', url, name });
+            }
+        });
+
+        document.getElementById('testCustomServer').addEventListener('click', async () => {
+            const url = document.getElementById('customServerUrl').value;
+            if (!url) {
+                showStatus('customServerStatus', '❌ Please enter server URL first', 'error');
+                return;
+            }
+            
+            showStatus('customServerStatus', '⏳ Testing connection...', 'info');
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        method: 'initialize',
+                        params: { protocolVersion: '0.1.0', capabilities: {} },
+                        id: Date.now()
+                    })
+                });
+                const data = await response.json();
+                if (data.result) {
+                    showStatus('customServerStatus', '✅ Server online! Server: ' + data.result.serverInfo.name, 'success');
+                } else {
+                    showStatus('customServerStatus', '⚠️ Server responded but protocol mismatch', 'error');
+                }
+            } catch (error) {
+                showStatus('customServerStatus', '❌ Cannot connect: ' + error.message, 'error');
+            }
+        });
+
+        document.getElementById('testShellBtn').addEventListener('click', async () => {
+            const statusDiv = document.getElementById('shellStatus');
+            statusDiv.innerHTML = '⏳ Testing...';
+            // Check if native host is available
+            chrome.runtime.sendMessage({ type: 'testNativeHost' }, (response) => {
+                if (response && response.success) {
+                    statusDiv.innerHTML = '✅ Native host is available';
+                } else {
+                    statusDiv.innerHTML = '❌ Native host not available. Run: npx deepseek-pp-shell-host install';
+                }
+            });
+        });
+
+        document.getElementById('saveGithubToken').addEventListener('click', async () => {
+            const token = document.getElementById('githubToken').value;
+            await chrome.storage.sync.set({ githubToken: token });
+            showStatus('githubStatus', '✅ GitHub token saved', 'success');
+        });
+
+        document.getElementById('checkGithubAuth').addEventListener('click', async () => {
+            const token = document.getElementById('githubToken').value;
+            if (!token) {
+                showStatus('githubStatus', '❌ No token saved', 'error');
+                return;
+            }
+            showStatus('githubStatus', '⏳ Checking...', 'info');
+            try {
+                const response = await fetch('https://api.github.com/user', {
+                    headers: { 'Authorization': `token ${token}` }
+                });
+                if (response.ok) {
+                    const user = await response.json();
+                    showStatus('githubStatus', `✅ Authenticated as: ${user.login}`, 'success');
+                } else {
+                    showStatus('githubStatus', '❌ Invalid token', 'error');
+                }
+            } catch (error) {
+                showStatus('githubStatus', '❌ Error: ' + error.message, 'error');
+            }
+        });
+
+        document.getElementById('saveAdvanced').addEventListener('click', async () => {
+            const settings = {
+                injectionStrategy: document.getElementById('injectionStrategy').value,
+                timeout: parseInt(document.getElementById('timeout').value)
+            };
+            await chrome.storage.sync.set(settings);
+            showStatus('githubStatus', '✅ Advanced settings saved', 'success');
+        });
+
+        document.getElementById('exportSettings').addEventListener('click', async () => {
+            const settings = await chrome.storage.sync.get(null);
+            const dataStr = JSON.stringify(settings, null, 2);
+            const blob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'deepseek-settings.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        document.getElementById('resetSettings').addEventListener('click', async () => {
+            if (confirm('Reset all settings to default?')) {
+                await chrome.storage.sync.clear();
+                await loadSettings();
+                showStatus('githubStatus', '✅ Settings reset to default', 'success');
+            }
+        });
+
+        document.getElementById('theme').addEventListener('change', async (e) => {
+            await chrome.storage.sync.set({ theme: e.target.value });
+            document.body.className = e.target.value;
+        });
+
+        function showStatus(elementId, message, type) {
+            const div = document.getElementById(elementId);
+            div.innerHTML = `<div class="status ${type}">${message}</div>`;
+            setTimeout(() => {
+                if (div.innerHTML.includes(message)) {
+                    div.innerHTML = '';
+                }
+            }, 5000);
+        }
+
+        // Apply theme
+        document.getElementById('theme').addEventListener('change', (e) => {
+            if (e.target.value === 'dark') {
+                document.body.style.background = '#1a1a1a';
+                document.body.style.color = '#fff';
+            } else if (e.target.value === 'light') {
+                document.body.style.background = '#f5f5f5';
+                document.body.style.color = '#333';
+            } else {
+                document.body.style.background = '#f5f5f5';
+                document.body.style.color = '#333';
+            }
+        });
+
+        loadSettings();
+    </script>
+</body>
+</html>

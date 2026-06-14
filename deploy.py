@@ -86,7 +86,7 @@ for attempt in range(25):
         if runs:
             print(f"📋 Найдено активных/недавних сборок: {len(runs)}")
             
-            # Сначала ищем воркфлоу релиза, который собирает zip
+            # Приоритетно перехватываем воркфлоу релиза
             for run in runs:
                 if run["status"] in ["in_progress", "queued", "waiting"] and "Release" in run["workflowName"]:
                     run_id = run["databaseId"]
@@ -94,7 +94,7 @@ for attempt in range(25):
                     print(f"🎯 НАШЛИ ПРОЦЕСС РЕЛИЗА! Захватываем ID: {run_id} [{wf_name}]")
                     break
             
-            # Если релиза еще нет в очереди, берем любой другой активный (например, CI)
+            # Если релиза еще нет в списке активных, берем CI билд
             if not run_id:
                 for run in runs:
                     if run["status"] in ["in_progress", "queued", "waiting"]:
@@ -131,7 +131,6 @@ try:
 except Exception as e:
     print(f"⚠️ Сетевое прерывание во время слежения (продолжаем работу): {e}")
 
-# Даем серверу GitHub обновить финальный статус в API
 time.sleep(3)
 
 final_check = run_command_capture(f"gh run view {run_id} --repo={TARGET_REPO} --json conclusion,workflowName")
@@ -148,21 +147,36 @@ if conclusion != "success":
     smart_parse_errors(run_id, TARGET_REPO)
     sys.exit(1)
 
-print(f"\n✅ Сборка [{wf_name}] успешна! Извлекаем архив расширения...")
+print(f"\n✅ Сборка [{wf_name}] успешна! Переходим к скачиванию расширения...")
 
 print("\n📦 [ЭТАП 6] Скачивание артефактов...")
 time.sleep(2)
 run_command_live("rm -rf ./build_artifacts && mkdir -p ./build_artifacts")
+
+# Пытаемся скачать из текущего билда
 download_res = run_command_live(f"gh run download {run_id} --repo={TARGET_REPO} --dir ./build_artifacts")
 
-if download_res.returncode != 0:
-    print("⚠️  Прямое скачивание не выдало файлов. Пробуем найти артефакты через последний успешный релиз...")
-    run_command_live(f"gh run download --repo={TARGET_REPO} --dir ./build_artifacts")
+# Если билд не вернул артефактов (например, зацепили старый CI), делаем фоллбэк на последний успешный Release воркфлоу
+if download_res.returncode != 0 or not os.listdir("./build_artifacts"):
+    print("⚠️  Текущий билд не содержит файлов артефактов. Ищем последний успешный Release Extension...")
+    find_rel_cmd = f'gh run list --repo={TARGET_REPO} --workflow="Release Extension" --status=success --limit 1 --json databaseId'
+    try:
+        rel_runs = json.loads(run_command_capture(find_rel_cmd).stdout)
+        if rel_runs:
+            last_success_release_id = rel_runs[0]["databaseId"]
+            print(f"🎯 Найдена прошлая успешная сборка релиза ID: {last_success_release_id}. Скачиваем файлы оттуда...")
+            run_command_live(f"gh run download {last_success_release_id} --repo={TARGET_REPO} --dir ./build_artifacts")
+        else:
+            print("⚠️ Успешных релизов в истории не найдено. Пробуем скачать любой последний доступный артефакт...")
+            run_command_live(f"gh run download --repo={TARGET_REPO} --dir ./build_artifacts")
+    except Exception as e:
+        print(f"❌ Ошибка поиска релизов: {e}")
 
 print("\n🔓 [ЭТАП 7] Перенос zip-пакета для Android...")
-run_command_live("unzip -o ./build_artifacts/*.zip -d ./build_artifacts/ 2>/dev/null")
+run_command_live("unzip -o ./build_artifacts/**/*.zip -d ./build_artifacts/ 2>/dev/null")
 
 zip_found = False
+# Проверяем, скачался ли готовый zip
 for root, dirs, files in os.walk("./build_artifacts"):
     for file in files:
         if file.endswith(".zip") and "artifact" not in file:

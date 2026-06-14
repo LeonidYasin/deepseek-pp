@@ -72,7 +72,6 @@ def smart_parse_errors(run_id, repo):
             print("   Допустимые форматы:")
             print("   - v0.7.1")
             print("   - v0.7.1-auto-1234567890")
-            print("   (только цифры после последнего дефиса, без дополнительных дефисов)")
     else:
         print("Критическая ошибка в логах не отфильтрована. Последние 10 строк:")
         for line in raw_logs.splitlines()[-10:]:
@@ -111,9 +110,8 @@ if answer in ["y", "yes", "д", "да"]:
         update_version_in_files(new_version)
         current_version = new_version
 
-# Генерируем тег в формате, который принимает воркфлоу
-# Формат: v0.7.1-auto-1234567890 (только цифры после последнего дефиса, без лишних дефисов)
-timestamp = datetime.now().strftime("%Y%m%d%H%M%S")  # без дефисов вообще
+# Генерируем тег
+timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 tag_name = f"v{current_version}-auto-{timestamp}"
 print(f"\n🏷️  Создаём тег: {tag_name}")
 
@@ -139,15 +137,14 @@ print("\n⏳ [ЭТАП 4] Ожидание запуска Actions...")
 time.sleep(5)
 run_id = None
 
-for attempt in range(35):
-    print(f"\n--- Попытка поиска {attempt + 1}/35 ---")
+for attempt in range(40):
+    print(f"\n--- Попытка поиска {attempt + 1}/40 ---")
     cmd = f"gh run list --repo={TARGET_REPO} --limit 5 --json databaseId,workflowName,status,conclusion,createdAt,event,displayTitle"
     res = run_command_capture(cmd)
     
     try:
         runs = json.loads(res.stdout)
         if runs:
-            print(f"📋 Найдено недавних сборок: {len(runs)}")
             for run in runs:
                 if run.get("event") == "push" and run["status"] in ["in_progress", "queued", "waiting"]:
                     run_id = run["databaseId"]
@@ -161,28 +158,20 @@ for attempt in range(35):
                         wf_name = run["workflowName"]
                         print(f"🎯 Нашли активную сборку: ID: {run_id} [{wf_name}]")
                         break
-        else:
-            print("📋 Список сборок пока пуст...")
     except Exception as parse_err:
         print(f"❌ Ошибка анализа ответа GitHub: {parse_err}")
         
     if run_id:
         break
-    print("💤 Спим 5 секунд перед следующим опросом API...")
+    print("💤 Спим 5 секунд...")
     time.sleep(5)
 
 if not run_id:
-    print("\n⚠️ Активный процесс не найден. Возможно, Actions уже завершились.")
-    print("💡 Проверьте вручную: https://github.com/" + TARGET_REPO + "/actions")
-    
-    print("\n📋 Последние запуски:")
-    run_command_live(f"gh run list --repo={TARGET_REPO} --limit 5")
-    
-    print("\n🔄 Пробуем взять последнюю завершённую сборку...")
+    print("\n⚠️ Активный процесс не найден. Берем последнюю сборку...")
     cmd = f"gh run list --repo={TARGET_REPO} --limit 1 --json databaseId,status"
     try:
         res = json.loads(run_command_capture(cmd).stdout)
-        if res and res[0].get("status") == "completed":
+        if res:
             run_id = res[0]["databaseId"]
             print(f"🎯 Берём последнюю сборку: {run_id}")
     except Exception as e:
@@ -211,14 +200,9 @@ if run_id:
     if conclusion != "success":
         print(f"\n❌ СБОРКА [{wf_name}] ЗАВЕРШИЛАСЬ С ОШИБКОЙ: {conclusion}")
         smart_parse_errors(run_id, TARGET_REPO)
-        
-        # Если ошибка валидации, предлагаем простой тег
-        print("\n💡 Попробуйте использовать простой тег без суффикса:")
-        print(f"   git tag v{current_version}")
-        print(f"   git push origin v{current_version}")
         sys.exit(1)
 
-    print(f"\n✅ Сборка [{wf_name}] успешна! Скачиваем расширение...")
+    print(f"\n✅ Сборка [{wf_name}] успешна!")
 
 print("\n📦 [ЭТАП 6] Скачивание артефактов...")
 time.sleep(3)
@@ -227,7 +211,7 @@ run_command_live("rm -rf ./build_artifacts && mkdir -p ./build_artifacts")
 download_res = run_command_live(f'gh release download {tag_name} --repo={TARGET_REPO} --pattern "*.zip" --dir ./build_artifacts')
 
 if download_res.returncode != 0 or not os.listdir("./build_artifacts"):
-    print("⚠️ Прямое скачивание по тегу не удалось. Пробуем последний релиз...")
+    print("⚠️ Прямое скачивание не удалось. Пробуем последний релиз...")
     run_command_live(f'gh release download --repo={TARGET_REPO} --pattern "*.zip" --dir ./build_artifacts')
 
 print("\n🔓 [ЭТАП 7] Сохранение в папку сборок...")
@@ -244,14 +228,7 @@ for root, dirs, files in os.walk("./build_artifacts"):
             
             run_command_live(f'cp -v "{source_path}" "{dest_path}"')
             
-            latest_link = os.path.join(BUILD_DIR, "deepseek-pp_latest.zip")
-            if os.path.islink(latest_link) or os.path.exists(latest_link):
-                os.remove(latest_link)
-            os.symlink(new_filename, latest_link)
-            
             print(f"\n📦 Файл сохранён: {dest_path}")
-            print(f"🔗 Симлинк: {latest_link}")
-            
             final_zip_name = dest_path
             zip_found = True
             break
@@ -259,13 +236,13 @@ for root, dirs, files in os.walk("./build_artifacts"):
 if zip_found:
     print("\n=============================================================")
     print("🎉 УСПЕШНО ЗАВЕРШЕНО!")
-    print(f"📍 Папка: {BUILD_DIR}")
+    print(f"📍 Папка со сборками: {BUILD_DIR}")
     print(f"📱 Файл: {final_zip_name}")
-    print(f"🔗 Ссылка: {BUILD_DIR}/deepseek-pp_latest.zip")
+    print("\n💡 В браузере Kiwi/Lemur укажите этот ZIP-файл для установки.")
     print("=============================================================")
     run_command_live("rm -rf ./build_artifacts")
     
-    print("\n📋 Последние сборки:")
-    run_command_live(f'ls -lt "{BUILD_DIR}" | head -6')
+    print("\n📋 Все сборки в папке:")
+    run_command_live(f'ls -la "{BUILD_DIR}"')
 else:
     print("❌ Ошибка: .zip файл не найден.")

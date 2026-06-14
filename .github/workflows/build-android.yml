@@ -5,12 +5,7 @@ on:
     branches: [ main, master ]
     paths:
       - 'android/**'
-      - '.github/workflows/build-android.yml'
-  pull_request:
-    branches: [ main, master ]
-    paths:
-      - 'android/**'
-  workflow_dispatch:  # Allows manual trigger
+  workflow_dispatch:
 
 jobs:
   build:
@@ -28,7 +23,7 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       with:
-        packages: 'platforms;android-33 build-tools;33.0.0'
+        packages: 'platforms;android-34 build-tools;34.0.0'
     
     - name: Grant execute permission for gradlew
       run: chmod +x android/gradlew
@@ -38,52 +33,9 @@ jobs:
       run: ./gradlew assembleRelease
       working-directory: android
     
-    - name: Sign APK (if secrets available)
-      if: secrets.KEYSTORE_BASE64 != ''
-      uses: r0adkll/sign-android-release@v1
-      with:
-        releaseDirectory: android/app/build/outputs/apk/release
-        signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
-        alias: ${{ secrets.KEY_ALIAS }}
-        keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-        keyPassword: ${{ secrets.KEY_PASSWORD }}
-    
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: deepseek-android-apk
         path: android/app/build/outputs/apk/release/*.apk
-        retention-days: 30
-    
-    - name: Upload debug APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: deepseek-android-debug
-        path: android/app/build/outputs/apk/debug/*.apk
-        retention-days: 30
-
-  build-with-docker:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Build with Docker
-      uses: docker/build-push-action@v5
-      with:
-        context: ./android
-        file: ./android/Dockerfile.build
-        load: true
-        tags: android-builder:latest
-    
-    - name: Extract APK from container
-      run: |
-        docker run --rm -v ${{ github.workspace }}/output:/output android-builder:latest cp /app/android/app/build/outputs/apk/release/*.apk /output/
-    
-    - name: Upload Docker-built APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: deepseek-docker-apk
-        path: output/*.apk
         retention-days: 30

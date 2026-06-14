@@ -16,7 +16,6 @@ def run_command_capture(cmd):
     return result
 
 def get_current_version():
-    """Читает версию из package.json"""
     try:
         with open("package.json", "r") as f:
             data = json.load(f)
@@ -26,10 +25,7 @@ def get_current_version():
         return "0.7.1"
 
 def update_version_in_files(new_version):
-    """Обновляет версию в package.json и других файлах"""
     print(f"📝 Обновляем версию до {new_version}...")
-    
-    # Обновляем package.json
     try:
         with open("package.json", "r") as f:
             data = json.load(f)
@@ -40,7 +36,6 @@ def update_version_in_files(new_version):
     except Exception as e:
         print(f"   ❌ Ошибка: {e}")
     
-    # Обновляем wxt.config.ts (если там есть версия)
     try:
         with open("wxt.config.ts", "r") as f:
             content = f.read()
@@ -72,20 +67,19 @@ def smart_parse_errors(run_id, repo):
         for err in errors:
             print(f"🚨 {err}")
         
-        # Специальная проверка для ошибки валидации тега
         if "Invalid release ref" in str(errors):
             print("\n💡 НЕВЕРНЫЙ ФОРМАТ ТЕГА!")
             print("   Допустимые форматы:")
             print("   - v0.7.1")
             print("   - v0.7.1-auto-1234567890")
-            print("   (используйте ДЕФИС, а не подчеркивание!)")
+            print("   (только цифры после последнего дефиса, без дополнительных дефисов)")
     else:
         print("Критическая ошибка в логах не отфильтрована. Последние 10 строк:")
         for line in raw_logs.splitlines()[-10:]:
             print(line)
     print("=============================================================")
 
-# --- НАДЕЖНОЕ ОПРЕДЕЛЕНИЕ ТВОЕГО РЕПОЗИТОРИЯ ИЗ GIT REMOTE ---
+# --- ОПРЕДЕЛЕНИЕ РЕПОЗИТОРИЯ ---
 remote_res = run_command_capture("git remote get-url origin")
 remote_url = remote_res.stdout.strip()
 
@@ -97,16 +91,15 @@ else:
     print(f"❌ Не удалось распарсить Git remote URL: {remote_url}")
     sys.exit(1)
 
-# --- СОЗДАЁМ ПАПКУ ДЛЯ СБОРОК (ЕСЛИ ЕЁ НЕТ) ---
+# --- ПАПКА ДЛЯ СБОРОК ---
 BUILD_DIR = "/sdcard/Download/deepseek-builds"
 os.makedirs(BUILD_DIR, exist_ok=True)
 print(f"📁 Папка для сборок: {BUILD_DIR}")
 
-# --- ЧИТАЕМ ТЕКУЩУЮ ВЕРСИЮ ---
+# --- ВЕРСИЯ ---
 current_version = get_current_version()
 print(f"📦 Текущая версия проекта: v{current_version}")
 
-# Спрашиваем, нужно ли обновить версию
 print("\n❓ Обновить версию? (y/N): ", end="")
 sys.stdout.flush()
 answer = input().strip().lower()
@@ -119,8 +112,8 @@ if answer in ["y", "yes", "д", "да"]:
         current_version = new_version
 
 # Генерируем тег в формате, который принимает воркфлоу
-# Используем ДЕФИС вместо подчеркивания
-timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")  # дефис вместо подчеркивания
+# Формат: v0.7.1-auto-1234567890 (только цифры после последнего дефиса, без лишних дефисов)
+timestamp = datetime.now().strftime("%Y%m%d%H%M%S")  # без дефисов вообще
 tag_name = f"v{current_version}-auto-{timestamp}"
 print(f"\n🏷️  Создаём тег: {tag_name}")
 
@@ -155,9 +148,7 @@ for attempt in range(35):
         runs = json.loads(res.stdout)
         if runs:
             print(f"📋 Найдено недавних сборок: {len(runs)}")
-            # Ищем сборку, связанную с нашим тегом
             for run in runs:
-                # Проверяем по displayTitle или event
                 if run.get("event") == "push" and run["status"] in ["in_progress", "queued", "waiting"]:
                     run_id = run["databaseId"]
                     wf_name = run["workflowName"]
@@ -183,10 +174,10 @@ for attempt in range(35):
 if not run_id:
     print("\n⚠️ Активный процесс не найден. Возможно, Actions уже завершились.")
     print("💡 Проверьте вручную: https://github.com/" + TARGET_REPO + "/actions")
+    
     print("\n📋 Последние запуски:")
     run_command_live(f"gh run list --repo={TARGET_REPO} --limit 5")
     
-    # Попробуем взять последний завершённый ран
     print("\n🔄 Пробуем взять последнюю завершённую сборку...")
     cmd = f"gh run list --repo={TARGET_REPO} --limit 1 --json databaseId,status"
     try:
@@ -220,6 +211,11 @@ if run_id:
     if conclusion != "success":
         print(f"\n❌ СБОРКА [{wf_name}] ЗАВЕРШИЛАСЬ С ОШИБКОЙ: {conclusion}")
         smart_parse_errors(run_id, TARGET_REPO)
+        
+        # Если ошибка валидации, предлагаем простой тег
+        print("\n💡 Попробуйте использовать простой тег без суффикса:")
+        print(f"   git tag v{current_version}")
+        print(f"   git push origin v{current_version}")
         sys.exit(1)
 
     print(f"\n✅ Сборка [{wf_name}] успешна! Скачиваем расширение...")
@@ -228,7 +224,6 @@ print("\n📦 [ЭТАП 6] Скачивание артефактов...")
 time.sleep(3)
 run_command_live("rm -rf ./build_artifacts && mkdir -p ./build_artifacts")
 
-# Скачиваем zip из релиза
 download_res = run_command_live(f'gh release download {tag_name} --repo={TARGET_REPO} --pattern "*.zip" --dir ./build_artifacts')
 
 if download_res.returncode != 0 or not os.listdir("./build_artifacts"):
@@ -249,7 +244,6 @@ for root, dirs, files in os.walk("./build_artifacts"):
             
             run_command_live(f'cp -v "{source_path}" "{dest_path}"')
             
-            # Симлинк на последнюю версию
             latest_link = os.path.join(BUILD_DIR, "deepseek-pp_latest.zip")
             if os.path.islink(latest_link) or os.path.exists(latest_link):
                 os.remove(latest_link)

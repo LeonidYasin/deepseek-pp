@@ -1,3 +1,2 @@
--keepclassmembers class com.deepseekpp.android.DeepSeekPlusPlusBridge {
-    @android.webkit.JavascriptInterface <methods>;
-}
+# Add project specific ProGuard rules here.
+# You can edit this file to include custom ProGuard rules.

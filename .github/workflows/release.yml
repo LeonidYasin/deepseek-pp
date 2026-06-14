@@ -9,6 +9,9 @@ jobs:
   release:
     name: Build and publish release
     runs-on: ubuntu-latest
+    # Явно даем права на запись контента (необходимо для создания релизов)
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout

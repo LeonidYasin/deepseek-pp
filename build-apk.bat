@@ -1,42 +1,23 @@
 @echo off
-echo ================================================================
-echo Building DeepSeek++ Android APK
-echo ================================================================
+echo ================================================
+echo DeepSeek++ APK Builder for Windows
+echo ================================================
 echo.
 
-REM Check if Docker is installed
-docker --version >nul 2>&1
+REM Check if Python is installed
+python --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Docker not found! Please install Docker Desktop
+    echo [ERROR] Python not found!
+    echo Please install Python from https://python.org
     pause
     exit /b 1
 )
 
-echo [1/4] Building Docker image...
-docker build -f android/Dockerfile.local -t android-builder .
-if errorlevel 1 (
-    echo [ERROR] Failed to build Docker image
-    pause
-    exit /b 1
-)
-
-echo [2/4] Creating container...
-docker create --name apk-builder android-builder
-
-echo [3/4] Building APK...
-docker start -a apk-builder
-
-echo [4/4] Copying APK from container...
-docker cp apk-builder:/app/android/app/build/outputs/apk/release ./apk-output
+echo [1/2] Running APK builder...
+python build-apk.py %*
 
 echo.
-echo Cleaning up...
-docker rm apk-builder
-
-echo.
-echo ================================================================
-echo APK built successfully!
-echo Location: %CD%\apk-output\
-echo ================================================================
-echo.
+echo ================================================
+echo Done!
+echo ================================================
 pause

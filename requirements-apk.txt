@@ -1,0 +1,6 @@
+# Dependencies for build-apk.py
+# Install with: pip install -r requirements-apk.txt
+
+# No additional dependencies required - uses only standard library
+# Optional for better output:
+# colorama>=0.4.6

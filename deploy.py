@@ -25,7 +25,7 @@ def smart_parse_errors(run_id, repo):
     errors = []
     for line in raw_logs.splitlines():
         if any(x in line for x in ["failed", "must keep", "❌", "##[error]", "Error:"]):
-            clean = re.sub(r".*Run quality gates\s+\d+-\d+-\d+T\d+:\d+:\d+\.\d+Z\s+", "", line)
+            clean = re.sub(r".*Run quality gates\s+\d+-%d+-%d+T\d+:\d+:\d+\.\d+Z\s+", "", line)
             if clean.strip() and clean.strip() not in errors:
                 errors.append(clean.strip())
                 
@@ -71,32 +71,39 @@ if push_tag_res.returncode != 0:
 print("\n⏳ [ЭТАП 4] Перехват запущенного процесса Actions...")
 run_id = None
 
-for attempt in range(20):
-    print(f"Поиск активного процесса (попытка {attempt + 1}/20)...", end="\r")
-    for status in ["in_progress", "queued"]:
-        cmd = f"gh run list --repo={TARGET_REPO} --status={status} --limit 2 --json databaseId,workflowName"
-        res = run_command_capture(cmd)
-        try:
-            runs = json.loads(res.stdout)
-            if runs:
-                run_id = runs[0]["databaseId"]
-                wf_name = runs[0]["workflowName"]
-                print(f"\n🎯 ПРОЦЕСС ХВАТИЛСЯ! ID: {run_id} [{wf_name}]")
-                break
-        except Exception:
-            pass
+for attempt in range(25):
+    print(f"Поиск активного процесса (попытка {attempt + 1}/25)...", end="\r")
+    
+    # Запрашиваем последние 3 сборки БЕЗ фильтрации по статусу — как мы делали вручную
+    cmd = f"gh run list --repo={TARGET_REPO} --limit 3 --json databaseId,workflowName,status"
+    res = run_command_capture(cmd)
+    
+    try:
+        runs = json.loads(res.stdout)
+        if runs:
+            # Ищем среди топ-3 ту, которая выполняется прямо сейчас
+            for run in runs:
+                if run["status"] in ["in_progress", "queued", "waiting"]:
+                    run_id = run["databaseId"]
+                    wf_name = run["workflowName"]
+                    print(f"\n🎯 ПРОЦЕСС ХВАТИЛСЯ! ID: {run_id} [{wf_name}]")
+                    break
+    except Exception:
+        pass
+        
     if run_id:
         break
-    time.sleep(4)
+    time.sleep(3)
 
 if not run_id:
-    print("\n⚠️ Активный процесс не найден мгновенно. Берем самый последний созданный билдинг:")
+    print("\n⚠️ Активный процесс не поймался по статусу. Берём самую верхнюю сборку принудительно:")
     cmd = f"gh run list --repo={TARGET_REPO} --limit 1 --json databaseId"
-    res = json.loads(run_command_capture(cmd).stdout)
-    if res:
-        run_id = res[0]["databaseId"]
-        print(f"🎯 Подключились к крайнему ID: {run_id}")
-    else:
+    try:
+        res = json.loads(run_command_capture(cmd).stdout)
+        if res:
+            run_id = res[0]["databaseId"]
+            print(f"🎯 Подключились к ID: {run_id}")
+    except Exception:
         print("❌ Сборок в репозитории не найдено.")
         sys.exit(1)
 

@@ -103,7 +103,6 @@ export default defineConfig({
     },
   }),
   manifest: (env) => {
-    // Форсируем Chromium-поведение, даже если валидатор проверяет firefox
     const isChromium = env.browser !== 'firefox';
     const userManifest: UserManifest = {
       name: MANIFEST_NAME,

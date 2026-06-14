@@ -84,17 +84,13 @@ for attempt in range(25):
     try:
         runs = json.loads(res.stdout)
         if runs:
-            print(f"📋 Найдено активных/недавних сборок: {len(runs)}")
-            
-            # Приоритетно перехватываем воркфлоу релиза
+            print(f"📋 Найдено недавних сборок: {len(runs)}")
             for run in runs:
                 if run["status"] in ["in_progress", "queued", "waiting"] and "Release" in run["workflowName"]:
                     run_id = run["databaseId"]
                     wf_name = run["workflowName"]
                     print(f"🎯 НАШЛИ ПРОЦЕСС РЕЛИЗА! Захватываем ID: {run_id} [{wf_name}]")
                     break
-            
-            # Если релиза еще нет в списке активных, берем CI билд
             if not run_id:
                 for run in runs:
                     if run["status"] in ["in_progress", "queued", "waiting"]:
@@ -105,7 +101,7 @@ for attempt in range(25):
         else:
             print("📋 Список сборок пока пуст...")
     except Exception as parse_err:
-        print(f"❌ Ошибка анализа ответа GitHub: {parse_err}")
+        print(f"❌ Ошибка анализа ответа GitHub (возможно сетевой сбой, повторяем...): {parse_err}")
         
     if run_id:
         break
@@ -131,7 +127,7 @@ try:
 except Exception as e:
     print(f"⚠️ Сетевое прерывание во время слежения (продолжаем работу): {e}")
 
-time.sleep(3)
+time.sleep(4)
 
 final_check = run_command_capture(f"gh run view {run_id} --repo={TARGET_REPO} --json conclusion,workflowName")
 try:
@@ -149,45 +145,25 @@ if conclusion != "success":
 
 print(f"\n✅ Сборка [{wf_name}] успешна! Переходим к скачиванию расширения...")
 
-print("\n📦 [ЭТАП 6] Скачивание артефактов...")
-time.sleep(2)
+print("\n📦 [ЭТАП 6] Скачивание артефактов напрямую из Релиза...")
+time.sleep(3)
 run_command_live("rm -rf ./build_artifacts && mkdir -p ./build_artifacts")
 
-# Пытаемся скачать из текущего билда
-download_res = run_command_live(f"gh run download {run_id} --repo={TARGET_REPO} --dir ./build_artifacts")
+# Скачиваем zip напрямую из релиза по созданному тегу (100% надежность без таймаутов экшенов)
+download_res = run_command_live(f'gh release download {tag_name} --repo={TARGET_REPO} --pattern "*.zip" --dir ./build_artifacts')
 
-# Если билд не вернул артефактов (например, зацепили старый CI), делаем фоллбэк на последний успешный Release воркфлоу
 if download_res.returncode != 0 or not os.listdir("./build_artifacts"):
-    print("⚠️  Текущий билд не содержит файлов артефактов. Ищем последний успешный Release Extension...")
-    find_rel_cmd = f'gh run list --repo={TARGET_REPO} --workflow="Release Extension" --status=success --limit 1 --json databaseId'
-    try:
-        rel_runs = json.loads(run_command_capture(find_rel_cmd).stdout)
-        if rel_runs:
-            last_success_release_id = rel_runs[0]["databaseId"]
-            print(f"🎯 Найдена прошлая успешная сборка релиза ID: {last_success_release_id}. Скачиваем файлы оттуда...")
-            run_command_live(f"gh run download {last_success_release_id} --repo={TARGET_REPO} --dir ./build_artifacts")
-        else:
-            print("⚠️ Успешных релизов в истории не найдено. Пробуем скачать любой последний доступный артефакт...")
-            run_command_live(f"gh run download --repo={TARGET_REPO} --dir ./build_artifacts")
-    except Exception as e:
-        print(f"❌ Ошибка поиска релизов: {e}")
+    print("⚠️ Прямое скачивание по тегу выдало ошибку. Пробуем скачать самый последний доступный релиз репозитория...")
+    run_command_live(f'gh release download --repo={TARGET_REPO} --pattern "*.zip" --dir ./build_artifacts')
 
-print("\n🔓 [ЭТАП 7] Перенос zip-пакета для Android...")
-run_command_live("unzip -o ./build_artifacts/**/*.zip -d ./build_artifacts/ 2>/dev/null")
-
+print("\n🔓 [ЭТАП 7] Перенос zip-пакета в Загрузки телефона...")
 zip_found = False
-# Проверяем, скачался ли готовый zip
 for root, dirs, files in os.walk("./build_artifacts"):
     for file in files:
-        if file.endswith(".zip") and "artifact" not in file:
+        if file.endswith(".zip"):
             run_command_live(f'cp -v "{os.path.join(root, file)}" /sdcard/Download/deepseek-mobile.zip')
             zip_found = True
             break
-    if "manifest.json" in files:
-        run_command_live("cd ./build_artifacts && zip -r ../deepseek-mobile.zip ./* -x \"*.zip\" && cd ..")
-        run_command_live("cp -v ./deepseek-mobile.zip /sdcard/Download/deepseek-mobile.zip && rm ./deepseek-mobile.zip")
-        zip_found = True
-        break
 
 if zip_found:
     print("=============================================================")
@@ -196,4 +172,4 @@ if zip_found:
     print("=============================================================")
     run_command_live("rm -rf ./build_artifacts")
 else:
-    print("❌ Ошибка: Не удалось найти файлы расширения или .zip внутри скачанных артефактов.")
+    print("❌ Ошибка: Не удалось обнаружить готовый .zip файл в скачанном релизе.")

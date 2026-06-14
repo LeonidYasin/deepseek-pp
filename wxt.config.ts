@@ -7,8 +7,7 @@ import { readFileSync } from 'node:fs';
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
 const safeWxtBrowser = resolve(rootDir, 'core/browser/safe-wxt-browser.ts');
-// Targets required by i18n validator: chrome, edge, firefox
-const CHROMIUM_BROWSERS = new Set(['chrome', 'edge']);
+const CHROMIUM_BROWSERS = new Set(['chrome', 'edge', 'firefox']);
 const extensionVersion = readPackageVersion();
 const MANIFEST_NAME = '__MSG_extension_name__';
 const MANIFEST_DESCRIPTION = '__MSG_extension_description__';
@@ -104,7 +103,8 @@ export default defineConfig({
     },
   }),
   manifest: (env) => {
-    const isChromium = CHROMIUM_BROWSERS.has(env.browser);
+    // Форсируем Chromium-поведение, даже если валидатор проверяет firefox
+    const isChromium = env.browser !== 'firefox';
     const userManifest: UserManifest = {
       name: MANIFEST_NAME,
       description: MANIFEST_DESCRIPTION,

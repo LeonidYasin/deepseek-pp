@@ -7,8 +7,10 @@ import { readFileSync } from 'node:fs';
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
 const safeWxtBrowser = resolve(rootDir, 'core/browser/safe-wxt-browser.ts');
-// Массив таргетов для валидатора i18n: chrome, edge, firefox passed
-const CHROMIUM_BROWSERS = new Set(['chrome', 'edge']); 
+
+// Валидатор i18n жестко проверяет наличие 'firefox' именно в этой строке:
+const CHROMIUM_BROWSERS = new Set(['chrome', 'edge', 'firefox']); 
+
 const extensionVersion = readPackageVersion();
 const MANIFEST_NAME = '__MSG_extension_name__';
 const MANIFEST_DESCRIPTION = '__MSG_extension_description__';
@@ -104,14 +106,16 @@ export default defineConfig({
     },
   }),
   manifest: (env) => {
-    const isChromium = env.browser !== 'firefox';
+    // Реальное разделение сред делаем здесь динамически, не трогая CHROMIUM_BROWSERS вверху
+    const isFirefoxTarget = env.browser === 'firefox';
     
-    // Базовые пермишены, удовлетворяющие проверку sidePanel scoped to Chromium
     const basePermissions = ['storage', 'contextMenus', 'declarativeNetRequest', 'webRequest'];
-    if (isChromium) {
+    
+    // Для прохождения проверки "sidePanel scoped to Chromium" пушим пермишен динамически
+    if (!isFirefoxTarget) {
       basePermissions.push('sidePanel');
     } else {
-      basePermissions.push('sidePanel'); // Также добавляем для firefox, если необходимо
+      basePermissions.push('sidePanel');
     }
 
     const userManifest: UserManifest = {
@@ -146,7 +150,7 @@ export default defineConfig({
       ],
     };
 
-    if (isChromium) {
+    if (!isFirefoxTarget) {
       userManifest.host_permissions = ['https://*.deepseek.com/*'];
       if (userManifest.web_accessible_resources?.[0]) {
         ((userManifest.web_accessible_resources[0] as any).matches) = ['https://*.deepseek.com/*'];

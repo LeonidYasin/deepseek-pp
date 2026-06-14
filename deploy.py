@@ -26,7 +26,7 @@ def smart_parse_errors(run_id, repo):
     
     errors = []
     for line in raw_logs.splitlines():
-        if any(x in line for x in ["failed", "must keep", "❌", "##[error]", "Error:"]):
+        if any(x in line for x in ["failed", "must keep", "❌", "##[error]", "Error:", "failed:"]):
             clean = re.sub(r".*Run quality gates\s+\d+-%d+-%d+T\d+:\d+:\d+\.\d+Z\s+", "", line)
             if clean.strip() and clean.strip() not in errors:
                 errors.append(clean.strip())
@@ -40,15 +40,14 @@ def smart_parse_errors(run_id, repo):
             print(line)
     print("=============================================================")
 
-# --- ЖЕСТКОЕ И НАДЕЖНОЕ ОПРЕДЕЛЕНИЕ ТВОЕГО РЕПОЗИТОРИЯ ИЗ GIT REMOTE ---
+# --- НАДЕЖНОЕ ОПРЕДЕЛЕНИЕ ТВОЕГО РЕПОЗИТОРИЯ ИЗ GIT REMOTE ---
 remote_res = run_command_capture("git remote get-url origin")
 remote_url = remote_res.stdout.strip()
 
-# Вытаскиваем "owner/repo" из форматов https://github.com/owner/repo.git или git@github.com:owner/repo.git
 match = re.search(r"github\.com[:/](.+?)(?:\.git)?$", remote_url)
 if match:
     TARGET_REPO = match.group(1)
-    print(f"🎯 Настоящий целевой репозиторий (из Git): {TARGET_REPO}")
+    print(f"🎯 Целевой репозиторий: {TARGET_REPO}")
 else:
     print(f"❌ Не удалось распарсить Git remote URL: {remote_url}")
     sys.exit(1)
@@ -79,37 +78,42 @@ run_id = None
 
 for attempt in range(25):
     print(f"\n--- Попытка поиска {attempt + 1}/25 ---")
-    cmd = f"gh run list --repo={TARGET_REPO} --limit 3 --json databaseId,workflowName,status,conclusion,createdAt"
+    cmd = f"gh run list --repo={TARGET_REPO} --limit 5 --json databaseId,workflowName,status,conclusion,createdAt"
     res = run_command_capture(cmd)
     
-    print(f"📥 Сырой ответ от GitHub API:\n{res.stdout}")
-    if res.stderr:
-        print(f"⚠️  Ошибки команды (stderr): {res.stderr}")
-        
     try:
         runs = json.loads(res.stdout)
         if runs:
-            print(f"📋 Найдено сборок в твоем репо: {len(runs)}")
-            for idx, run in enumerate(runs):
-                print(f"  [{idx}] ID: {run['databaseId']} | Workflow: {run['workflowName']} | Status: {run['status']} | Conclusion: {run.get('conclusion')} | Created: {run['createdAt']}")
-                
-                if run["status"] in ["in_progress", "queued", "waiting"]:
+            print(f"📋 Найдено активных/недавних сборок: {len(runs)}")
+            
+            # Сначала ищем воркфлоу релиза, который собирает zip
+            for run in runs:
+                if run["status"] in ["in_progress", "queued", "waiting"] and "Release" in run["workflowName"]:
                     run_id = run["databaseId"]
                     wf_name = run["workflowName"]
-                    print(f"🎯 НАШЛИ АКТИВНЫЙ БИЛД! Захватываем ID: {run_id} [{wf_name}]")
+                    print(f"🎯 НАШЛИ ПРОЦЕСС РЕЛИЗА! Захватываем ID: {run_id} [{wf_name}]")
                     break
+            
+            # Если релиза еще нет в очереди, берем любой другой активный (например, CI)
+            if not run_id:
+                for run in runs:
+                    if run["status"] in ["in_progress", "queued", "waiting"]:
+                        run_id = run["databaseId"]
+                        wf_name = run["workflowName"]
+                        print(f"🎯 Нашли активный сопутствующий билд: ID: {run_id} [{wf_name}]")
+                        break
         else:
-            print("📋 Список сборок вернулся пустым []")
+            print("📋 Список сборок пока пуст...")
     except Exception as parse_err:
-        print(f"❌ Ошибка парсинга JSON: {parse_err}")
+        print(f"❌ Ошибка анализа ответа GitHub: {parse_err}")
         
     if run_id:
         break
-    print("💤 Спим 4 секунды перед следующим опросом...")
+    print("💤 Спим 4 секунды перед следующим опросом API...")
     time.sleep(4)
 
 if not run_id:
-    print("\n⚠️ Активный процесс не поймался по статусу. Пробуем взять самый верхний принудительно:")
+    print("\n⚠️ Активный процесс не поймался по статусу. Берем самую верхнюю сборку принудительно:")
     cmd = f"gh run list --repo={TARGET_REPO} --limit 1 --json databaseId"
     try:
         res = json.loads(run_command_capture(cmd).stdout)
@@ -122,27 +126,40 @@ if not run_id:
 
 print("\n🔄 [ЭТАП 5] Подключение к трансляции логов сервера...")
 print("=============================================================")
-run_command_live(f"gh run watch {run_id} --repo={TARGET_REPO}")
-
-final_check = run_command_capture(f"gh run view {run_id} --repo={TARGET_REPO} --json conclusion")
 try:
-    conclusion = json.loads(final_check.stdout).get("conclusion")
+    run_command_live(f"gh run watch {run_id} --repo={TARGET_REPO}")
+except Exception as e:
+    print(f"⚠️ Сетевое прерывание во время слежения (продолжаем работу): {e}")
+
+# Даем серверу GitHub обновить финальный статус в API
+time.sleep(3)
+
+final_check = run_command_capture(f"gh run view {run_id} --repo={TARGET_REPO} --json conclusion,workflowName")
+try:
+    final_data = json.loads(final_check.stdout)
+    conclusion = final_data.get("conclusion")
+    wf_name = final_data.get("workflowName")
 except Exception:
     conclusion = "unknown"
+    wf_name = "unknown"
 
 if conclusion != "success":
-    print("\n❌ СБОРКА УПАЛА.")
+    print(f"\n❌ СБОРКА [{wf_name}] ЗАВЕРШИЛАСЬ С ОШИБКОЙ ИЛИ СТАТУСОМ: {conclusion}")
     smart_parse_errors(run_id, TARGET_REPO)
     sys.exit(1)
 
-print("\n✅ Сборка успешна! Извлекаем архив расширения...")
+print(f"\n✅ Сборка [{wf_name}] успешна! Извлекаем архив расширения...")
 
 print("\n📦 [ЭТАП 6] Скачивание артефактов...")
-time.sleep(3)
-run_command_live("mkdir -p ./build_artifacts")
-run_command_live(f"gh run download {run_id} --repo={TARGET_REPO} --dir ./build_artifacts")
+time.sleep(2)
+run_command_live("rm -rf ./build_artifacts && mkdir -p ./build_artifacts")
+download_res = run_command_live(f"gh run download {run_id} --repo={TARGET_REPO} --dir ./build_artifacts")
 
-print("\n🔓 [ЭТАП 7] Сборка zip-пакета для Android...")
+if download_res.returncode != 0:
+    print("⚠️  Прямое скачивание не выдало файлов. Пробуем найти артефакты через последний успешный релиз...")
+    run_command_live(f"gh run download --repo={TARGET_REPO} --dir ./build_artifacts")
+
+print("\n🔓 [ЭТАП 7] Перенос zip-пакета для Android...")
 run_command_live("unzip -o ./build_artifacts/*.zip -d ./build_artifacts/ 2>/dev/null")
 
 zip_found = False
@@ -165,4 +182,4 @@ if zip_found:
     print("=============================================================")
     run_command_live("rm -rf ./build_artifacts")
 else:
-    print("❌ Не удалось найти файлы манифеста внутри собранного контейнера.")
+    print("❌ Ошибка: Не удалось найти файлы расширения или .zip внутри скачанных артефактов.")

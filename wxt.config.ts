@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
 const safeWxtBrowser = resolve(rootDir, 'core/browser/safe-wxt-browser.ts');
+// Targets required by i18n validator: chrome, edge, firefox
 const CHROMIUM_BROWSERS = new Set(['chrome', 'edge']);
 const extensionVersion = readPackageVersion();
 const MANIFEST_NAME = '__MSG_extension_name__';

@@ -1,0 +1,725 @@
+.
+├── AGENTS.md
+├── CONTRIBUTING.md
+├── README.md
+├── README_EN.md
+├── android
+│   ├── README.md
+│   ├── app
+│   │   ├── build.gradle.kts
+│   │   ├── proguard-rules.pro
+│   │   └── src
+│   │       └── main
+│   │           ├── AndroidManifest.xml
+│   │           ├── java
+│   │           │   └── com
+│   │           │       └── deepseekpp
+│   │           │           └── android
+│   │           │               ├── DeepSeekPlusPlusBridge.kt
+│   │           │               └── MainActivity.kt
+│   │           └── res
+│   │               └── values
+│   │                   ├── colors.xml
+│   │                   ├── strings.xml
+│   │                   └── themes.xml
+│   ├── build.gradle.kts
+│   ├── gradle.properties
+│   ├── settings.gradle.kts
+│   └── web
+│       └── android-bridge-shim.js
+├── assets
+│   ├── readme-header.png
+│   ├── screenshot-inline-tools.svg
+│   ├── screenshot-sidepanel-automation.svg
+│   ├── screenshot-sidepanel-mcp.svg
+│   ├── screenshot-sidepanel-memory.png
+│   ├── screenshot-sidepanel-skill.png
+│   ├── screenshot-skill-popup.png
+│   └── yuansheng.jpg
+├── core
+│   ├── artifact
+│   │   ├── index.ts
+│   │   ├── store.ts
+│   │   ├── tool.ts
+│   │   ├── types.ts
+│   │   └── zip.ts
+│   ├── automation
+│   │   ├── messages.ts
+│   │   ├── pow.ts
+│   │   ├── runner.ts
+│   │   ├── schedule.ts
+│   │   ├── scheduler.ts
+│   │   ├── store.ts
+│   │   └── types.ts
+│   ├── background
+│   │   ├── config.ts
+│   │   └── store.ts
+│   ├── browser
+│   │   └── safe-wxt-browser.ts
+│   ├── chat
+│   │   ├── api-key.ts
+│   │   ├── official-api-config.ts
+│   │   └── store.ts
+│   ├── constants.ts
+│   ├── deepseek
+│   │   ├── adapter.ts
+│   │   ├── conversation-export.ts
+│   │   ├── official-api.ts
+│   │   └── pow.ts
+│   ├── export
+│   │   ├── artifact-filename.ts
+│   │   ├── artifact-html.ts
+│   │   ├── artifact-markdown.ts
+│   │   ├── artifact-pdf.ts
+│   │   ├── attachments.ts
+│   │   ├── normalize.ts
+│   │   ├── sanitize.ts
+│   │   ├── schema.ts
+│   │   ├── secondary-artifacts.ts
+│   │   ├── service.ts
+│   │   └── types.ts
+│   ├── i18n
+│   │   ├── index.ts
+│   │   ├── resources
+│   │   │   ├── en.ts
+│   │   │   └── zh-CN.ts
+│   │   ├── store.ts
+│   │   └── types.ts
+│   ├── inline-agent
+│   │   ├── loop.ts
+│   │   ├── markdown.ts
+│   │   ├── prompt.ts
+│   │   ├── renderer.ts
+│   │   └── types.ts
+│   ├── interceptor
+│   │   ├── fetch-hook.ts
+│   │   ├── history-cleanup.ts
+│   │   ├── request-augmentation.ts
+│   │   ├── sse-parser.ts
+│   │   ├── streaming-tool-call-parser.ts
+│   │   ├── streaming-tool-text.ts
+│   │   ├── token-speed.ts
+│   │   ├── tool-parser.ts
+│   │   └── tool-scan-gate.ts
+│   ├── mcp
+│   │   ├── client.ts
+│   │   ├── discovery.ts
+│   │   ├── index.ts
+│   │   ├── store.ts
+│   │   ├── transports
+│   │   │   ├── bridge.ts
+│   │   │   ├── common.ts
+│   │   │   ├── http.ts
+│   │   │   ├── index.ts
+│   │   │   ├── native.ts
+│   │   │   └── sse.ts
+│   │   └── types.ts
+│   ├── memory
+│   │   ├── import-tool.ts
+│   │   ├── importer.ts
+│   │   ├── injector.ts
+│   │   ├── selector.ts
+│   │   └── store.ts
+│   ├── messaging
+│   │   └── schema.ts
+│   ├── messaging.ts
+│   ├── model
+│   │   └── store.ts
+│   ├── pet
+│   │   ├── config.ts
+│   │   ├── lines.ts
+│   │   └── store.ts
+│   ├── platform
+│   │   ├── browser.ts
+│   │   ├── capabilities.ts
+│   │   ├── gating.ts
+│   │   └── index.ts
+│   ├── preset
+│   │   └── store.ts
+│   ├── project
+│   │   ├── index.ts
+│   │   ├── rag.ts
+│   │   ├── sources.ts
+│   │   ├── store.ts
+│   │   └── types.ts
+│   ├── prompt
+│   │   ├── augmentation.ts
+│   │   ├── index.ts
+│   │   ├── settings.ts
+│   │   └── visibility.ts
+│   ├── sandbox
+│   │   ├── index.ts
+│   │   ├── python-worker.ts
+│   │   ├── tool.ts
+│   │   ├── types.ts
+│   │   └── worker-runner.ts
+│   ├── saved-items
+│   │   ├── index.ts
+│   │   ├── store.ts
+│   │   └── types.ts
+│   ├── scenario
+│   │   └── store.ts
+│   ├── shell
+│   │   ├── contracts.ts
+│   │   ├── index.ts
+│   │   └── policy.ts
+│   ├── skill
+│   │   ├── builtin.ts
+│   │   ├── creator-tool.ts
+│   │   ├── github-importer.ts
+│   │   ├── officecli-library.ts
+│   │   ├── officecli-official
+│   │   │   ├── skills
+│   │   │   │   ├── morph-ppt
+│   │   │   │   │   ├── SKILL.md
+│   │   │   │   │   └── reference
+│   │   │   │   │       ├── decision-rules.md
+│   │   │   │   │       ├── pptx-design.md
+│   │   │   │   │       └── styles
+│   │   │   │   │           ├── INDEX.md
+│   │   │   │   │           ├── bw--brutalist-raw
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── bw--mono-line
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── bw--swiss-bauhaus
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── bw--swiss-system
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--architectural-plan
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--aurora-softedge
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--blueprint-grid
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--circle-digital
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--cosmic-neon
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--cyber-future
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--diagonal-cut
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--editorial-story
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--investor-pitch
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--liquid-flow
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--luxury-minimal
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--midnight-blueprint
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--neon-productivity
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--obsidian-amber
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--premium-navy
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--sage-grain
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--space-odyssey
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--spotlight-stage
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── dark--velvet-rose
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--bold-type
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--firmwise-saas
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--fluid-gradient
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--glassmorphism-vc
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--isometric-clean
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--minimal-corporate
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--minimal-product
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--project-proposal
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--spring-launch
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--training-interactive
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── light--watercolor-wash
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── mixed--bauhaus-blocks
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── mixed--chromatic-aberration
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── mixed--duotone-split
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── mixed--spectral-grid
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── vivid--bauhaus-electric
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── vivid--candy-stripe
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── vivid--energy-neon
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── vivid--pink-editorial
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── vivid--playful-marketing
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── warm--bloom-academy
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── warm--brand-refresh
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── warm--coral-culture
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── warm--earth-organic
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── warm--monument-editorial
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── warm--playful-organic
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           ├── warm--sunset-mosaic
+│   │   │   │   │           │   └── style.md
+│   │   │   │   │           └── warm--vital-bloom
+│   │   │   │   │               └── style.md
+│   │   │   │   ├── morph-ppt-3d
+│   │   │   │   │   └── SKILL.md
+│   │   │   │   ├── officecli
+│   │   │   │   │   └── SKILL.md
+│   │   │   │   ├── officecli-academic-paper
+│   │   │   │   │   └── SKILL.md
+│   │   │   │   ├── officecli-data-dashboard
+│   │   │   │   │   └── SKILL.md
+│   │   │   │   ├── officecli-docx
+│   │   │   │   │   └── SKILL.md
+│   │   │   │   ├── officecli-financial-model
+│   │   │   │   │   └── SKILL.md
+│   │   │   │   ├── officecli-pitch-deck
+│   │   │   │   │   └── SKILL.md
+│   │   │   │   ├── officecli-pptx
+│   │   │   │   │   └── SKILL.md
+│   │   │   │   ├── officecli-word-form
+│   │   │   │   │   └── SKILL.md
+│   │   │   │   └── officecli-xlsx
+│   │   │   │       └── SKILL.md
+│   │   │   └── styles
+│   │   │       ├── INDEX.md
+│   │   │       ├── bw--brutalist-raw
+│   │   │       │   └── style.md
+│   │   │       ├── bw--mono-line
+│   │   │       │   └── style.md
+│   │   │       ├── bw--swiss-bauhaus
+│   │   │       │   └── style.md
+│   │   │       ├── bw--swiss-system
+│   │   │       │   └── style.md
+│   │   │       ├── dark--architectural-plan
+│   │   │       │   └── style.md
+│   │   │       ├── dark--aurora-softedge
+│   │   │       │   └── style.md
+│   │   │       ├── dark--blueprint-grid
+│   │   │       │   └── style.md
+│   │   │       ├── dark--circle-digital
+│   │   │       │   └── style.md
+│   │   │       ├── dark--cosmic-neon
+│   │   │       │   └── style.md
+│   │   │       ├── dark--cyber-future
+│   │   │       │   └── style.md
+│   │   │       ├── dark--diagonal-cut
+│   │   │       │   └── style.md
+│   │   │       ├── dark--editorial-story
+│   │   │       │   └── style.md
+│   │   │       ├── dark--investor-pitch
+│   │   │       │   └── style.md
+│   │   │       ├── dark--liquid-flow
+│   │   │       │   └── style.md
+│   │   │       ├── dark--luxury-minimal
+│   │   │       │   └── style.md
+│   │   │       ├── dark--midnight-blueprint
+│   │   │       │   └── style.md
+│   │   │       ├── dark--neon-productivity
+│   │   │       │   └── style.md
+│   │   │       ├── dark--obsidian-amber
+│   │   │       │   └── style.md
+│   │   │       ├── dark--premium-navy
+│   │   │       │   └── style.md
+│   │   │       ├── dark--sage-grain
+│   │   │       │   └── style.md
+│   │   │       ├── dark--space-odyssey
+│   │   │       │   └── style.md
+│   │   │       ├── dark--spotlight-stage
+│   │   │       │   └── style.md
+│   │   │       ├── dark--velvet-rose
+│   │   │       │   └── style.md
+│   │   │       ├── light--bold-type
+│   │   │       │   └── style.md
+│   │   │       ├── light--firmwise-saas
+│   │   │       │   └── style.md
+│   │   │       ├── light--fluid-gradient
+│   │   │       │   └── style.md
+│   │   │       ├── light--glassmorphism-vc
+│   │   │       │   └── style.md
+│   │   │       ├── light--isometric-clean
+│   │   │       │   └── style.md
+│   │   │       ├── light--minimal-corporate
+│   │   │       │   └── style.md
+│   │   │       ├── light--minimal-product
+│   │   │       │   └── style.md
+│   │   │       ├── light--project-proposal
+│   │   │       │   └── style.md
+│   │   │       ├── light--spring-launch
+│   │   │       │   └── style.md
+│   │   │       ├── light--training-interactive
+│   │   │       │   └── style.md
+│   │   │       ├── light--watercolor-wash
+│   │   │       │   └── style.md
+│   │   │       ├── mixed--bauhaus-blocks
+│   │   │       │   └── style.md
+│   │   │       ├── mixed--chromatic-aberration
+│   │   │       │   └── style.md
+│   │   │       ├── mixed--duotone-split
+│   │   │       │   └── style.md
+│   │   │       ├── mixed--spectral-grid
+│   │   │       │   └── style.md
+│   │   │       ├── vivid--bauhaus-electric
+│   │   │       │   └── style.md
+│   │   │       ├── vivid--candy-stripe
+│   │   │       │   └── style.md
+│   │   │       ├── vivid--energy-neon
+│   │   │       │   └── style.md
+│   │   │       ├── vivid--pink-editorial
+│   │   │       │   └── style.md
+│   │   │       ├── vivid--playful-marketing
+│   │   │       │   └── style.md
+│   │   │       ├── warm--bloom-academy
+│   │   │       │   └── style.md
+│   │   │       ├── warm--brand-refresh
+│   │   │       │   └── style.md
+│   │   │       ├── warm--coral-culture
+│   │   │       │   └── style.md
+│   │   │       ├── warm--earth-organic
+│   │   │       │   └── style.md
+│   │   │       ├── warm--monument-editorial
+│   │   │       │   └── style.md
+│   │   │       ├── warm--playful-organic
+│   │   │       │   └── style.md
+│   │   │       ├── warm--sunset-mosaic
+│   │   │       │   └── style.md
+│   │   │       └── warm--vital-bloom
+│   │   │           └── style.md
+│   │   ├── parser.ts
+│   │   └── registry.ts
+│   ├── sync
+│   │   ├── config.ts
+│   │   ├── schema.ts
+│   │   └── webdav-client.ts
+│   ├── theme
+│   │   └── store.ts
+│   ├── token
+│   │   └── estimator.ts
+│   ├── tool
+│   │   ├── execution-restore.ts
+│   │   ├── history.ts
+│   │   ├── index.ts
+│   │   ├── invocation.ts
+│   │   ├── memory.ts
+│   │   ├── restore-block.ts
+│   │   ├── runtime.ts
+│   │   ├── sidepanel.ts
+│   │   ├── types.ts
+│   │   ├── web-search.ts
+│   │   ├── web-settings.ts
+│   │   └── xml-tags.ts
+│   ├── tool-loop
+│   │   └── engine.ts
+│   ├── types.ts
+│   ├── ui
+│   │   ├── skill-popup.ts
+│   │   ├── tool-card.ts
+│   │   └── tool-result-renderer.ts
+│   ├── version.ts
+│   ├── voice
+│   │   └── settings.ts
+│   └── whats-new.ts
+├── docs
+│   ├── analysis
+│   │   ├── module-inventory.md
+│   │   ├── project-overview.md
+│   │   └── risk-assessment.md
+│   ├── archives
+│   │   ├── README.md
+│   │   ├── better-deepseek-capability-adoption
+│   │   │   ├── analysis
+│   │   │   │   ├── module-inventory.md
+│   │   │   │   ├── project-overview.md
+│   │   │   │   └── risk-assessment.md
+│   │   │   ├── governance
+│   │   │   │   └── AGENTS.md
+│   │   │   ├── plan
+│   │   │   │   ├── dependency-graph.md
+│   │   │   │   ├── milestones.md
+│   │   │   │   └── task-breakdown.md
+│   │   │   └── progress
+│   │   │       └── MASTER.md
+│   │   ├── deepseek-automation
+│   │   │   ├── analysis
+│   │   │   │   ├── module-inventory.md
+│   │   │   │   ├── project-overview.md
+│   │   │   │   └── risk-assessment.md
+│   │   │   ├── plan
+│   │   │   │   ├── dependency-graph.md
+│   │   │   │   ├── milestones.md
+│   │   │   │   └── task-breakdown.md
+│   │   │   ├── progress
+│   │   │   │   └── MASTER.md
+│   │   │   └── skill
+│   │   │       ├── SKILL.md
+│   │   │       └── agents
+│   │   │           └── openai.yaml
+│   │   ├── deepseek-mcp-support
+│   │   │   ├── analysis
+│   │   │   │   ├── module-inventory.md
+│   │   │   │   ├── project-overview.md
+│   │   │   │   └── risk-assessment.md
+│   │   │   ├── plan
+│   │   │   │   ├── dependency-graph.md
+│   │   │   │   ├── milestones.md
+│   │   │   │   └── task-breakdown.md
+│   │   │   └── progress
+│   │   │       └── MASTER.md
+│   │   ├── deepseek-official-conversation-export
+│   │   │   ├── analysis
+│   │   │   │   ├── deepseek-export-endpoint-verification.md
+│   │   │   │   ├── deepseek-export-scope.md
+│   │   │   │   ├── module-inventory.md
+│   │   │   │   ├── project-overview.md
+│   │   │   │   └── risk-assessment.md
+│   │   │   ├── plan
+│   │   │   │   ├── dependency-graph.md
+│   │   │   │   ├── milestones.md
+│   │   │   │   └── task-breakdown.md
+│   │   │   └── progress
+│   │   │       └── MASTER.md
+│   │   ├── edge-firefox-browser-support
+│   │   │   ├── analysis
+│   │   │   │   ├── module-inventory.md
+│   │   │   │   ├── project-overview.md
+│   │   │   │   └── risk-assessment.md
+│   │   │   ├── plan
+│   │   │   │   ├── dependency-graph.md
+│   │   │   │   ├── milestones.md
+│   │   │   │   └── task-breakdown.md
+│   │   │   └── progress
+│   │   │       ├── MASTER.md
+│   │   │       ├── phase-1-browser-target-packaging.md
+│   │   │       ├── phase-2-runtime-compatibility.md
+│   │   │       └── phase-3-documentation-and-verification.md
+│   │   ├── officecli-productization
+│   │   │   ├── analysis
+│   │   │   │   ├── module-inventory.md
+│   │   │   │   ├── project-overview.md
+│   │   │   │   └── risk-assessment.md
+│   │   │   ├── plan
+│   │   │   │   ├── dependency-graph.md
+│   │   │   │   ├── milestones.md
+│   │   │   │   └── task-breakdown.md
+│   │   │   └── progress
+│   │   │       └── MASTER.md
+│   │   └── token-speed-indicator
+│   │       ├── analysis
+│   │       │   ├── module-inventory.md
+│   │       │   ├── project-overview.md
+│   │       │   └── risk-assessment.md
+│   │       ├── plan
+│   │       │   ├── dependency-graph.md
+│   │       │   ├── milestones.md
+│   │       │   └── task-breakdown.md
+│   │       └── progress
+│   │           ├── MASTER.md
+│   │           └── phase-1-token-speed-indicator.md
+│   ├── chrome-web-store
+│   │   ├── README.md
+│   │   ├── assets
+│   │   │   ├── screenshot-inline-tools-1280x800.png
+│   │   │   ├── small-promo.png
+│   │   │   └── small-promo.svg
+│   │   ├── listing.md
+│   │   ├── privacy-policy.md
+│   │   └── submission.md
+│   ├── ci-cd.md
+│   ├── decisions
+│   │   └── custom-css-theme-policy.md
+│   ├── plan
+│   │   ├── dependency-graph.md
+│   │   ├── milestones.md
+│   │   └── task-breakdown.md
+│   ├── progress
+│   │   └── MASTER.md
+│   ├── refactor-current-architecture.md
+│   ├── releases
+│   │   ├── 0.2.0.md
+│   │   ├── 0.3.0.md
+│   │   ├── 0.4.0.md
+│   │   ├── 0.4.1.md
+│   │   ├── 0.4.2.md
+│   │   ├── 0.4.3.md
+│   │   ├── 0.4.4.md
+│   │   ├── 0.5.0.md
+│   │   ├── 0.5.1.md
+│   │   ├── 0.6.0.md
+│   │   ├── 0.6.1.md
+│   │   ├── 0.6.2.md
+│   │   ├── 0.6.3.md
+│   │   ├── 0.6.4.md
+│   │   ├── 0.6.5.md
+│   │   ├── 0.7.0.md
+│   │   └── 0.7.1.md
+│   ├── superpowers
+│   │   └── specs
+│   │       └── 2026-06-01-sidebar-deepseek-chat-design.md
+│   └── verification
+│       ├── mcp-live-mock.md
+│       └── mcp-operator-notes.md
+├── entrypoints
+│   ├── background.ts
+│   ├── content
+│   │   └── adapters
+│   │       ├── history-organizer.ts
+│   │       └── ux-polish.ts
+│   ├── content.ts
+│   ├── main-world.content.ts
+│   ├── sandbox-offscreen
+│   │   ├── index.html
+│   │   └── main.ts
+│   ├── sandbox-runner
+│   │   ├── index.html
+│   │   └── main.ts
+│   └── sidepanel
+│       ├── App.tsx
+│       ├── components
+│       │   ├── ChatMessage.tsx
+│       │   ├── GitHubSkillImportPanel.tsx
+│       │   ├── MemoryCard.tsx
+│       │   ├── MemoryForm.tsx
+│       │   ├── PageIntro.tsx
+│       │   ├── PresetCard.tsx
+│       │   ├── PresetForm.tsx
+│       │   ├── PromptControlPanel.tsx
+│       │   ├── ScenarioManager.tsx
+│       │   ├── SkillCard.tsx
+│       │   ├── SkillForm.tsx
+│       │   ├── VoiceSettingsPanel.tsx
+│       │   └── WhatsNewPanel.tsx
+│       ├── constants.ts
+│       ├── github-permission.ts
+│       ├── i18n.tsx
+│       ├── index.html
+│       ├── main.tsx
+│       ├── pages
+│       │   ├── AutomationPage.tsx
+│       │   ├── CapabilitiesPage.tsx
+│       │   ├── ChatPage.tsx
+│       │   ├── LibraryPage.tsx
+│       │   ├── McpPage.tsx
+│       │   ├── MemoryPage.tsx
+│       │   ├── PresetPage.tsx
+│       │   ├── ProjectsPage.tsx
+│       │   ├── SavedPage.tsx
+│       │   ├── SettingsPage.tsx
+│       │   ├── SkillPage.tsx
+│       │   └── ToolsPage.tsx
+│       ├── pending-text.ts
+│       └── style.css
+├── package-lock.json
+├── package.json
+├── packages
+│   └── shell-host
+│       ├── README.md
+│       ├── bin
+│       │   └── deepseek-pp-shell-host.mjs
+│       ├── lib
+│       │   └── installer.mjs
+│       ├── native
+│       │   └── shell-mcp-host.mjs
+│       └── package.json
+├── public
+│   ├── _locales
+│   │   ├── en
+│   │   │   └── messages.json
+│   │   └── zh_CN
+│   │       └── messages.json
+│   ├── deepseek
+│   │   └── sha3_wasm_bg.wasm
+│   ├── icon
+│   │   ├── 128.png
+│   │   ├── 16.png
+│   │   ├── 32.png
+│   │   ├── 48.png
+│   │   └── 96.png
+│   ├── logo.png
+│   ├── pet
+│   │   └── deepseek-whale-pet-states.png
+│   └── wxt.svg
+├── scripts
+│   ├── automation-contract-smoke.mjs
+│   ├── copy-to-android-assets.mjs
+│   ├── i18n-coverage-audit.mjs
+│   ├── i18n-locale-check.mjs
+│   ├── install-shell-host.mjs
+│   ├── manifest-policy-check.mjs
+│   ├── mcp-live-mock.mjs
+│   ├── mcp-smoke.mjs
+│   ├── package-sources.mjs
+│   ├── pow-smoke.mjs
+│   ├── prompt-freeze.mjs
+│   ├── release-assets-check.mjs
+│   ├── run-android-gradle.mjs
+│   ├── shell-mcp-host.mjs
+│   ├── shell-smoke.mjs
+│   ├── verify-extension-utf8.mjs
+│   └── web-search-smoke.mjs
+├── tests
+│   ├── artifact.test.ts
+│   ├── bridge-schema.test.ts
+│   ├── conversation-export.test.ts
+│   ├── deepseek-adapter-stream.test.ts
+│   ├── deepseek-official-api.test.ts
+│   ├── fixtures
+│   │   └── deepseek-export
+│   │       ├── file-metadata.json
+│   │       ├── history-alpha.json
+│   │       ├── history-missing-messages.json
+│   │       ├── session-page-1.json
+│   │       └── session-page-2.json
+│   ├── history-cleanup.test.ts
+│   ├── i18n.test.ts
+│   ├── inline-agent-prompt.test.ts
+│   ├── inline-agent-renderer.test.ts
+│   ├── inline-markdown.test.ts
+│   ├── mcp-transport-common.test.ts
+│   ├── memory-tool.test.ts
+│   ├── p1-interactive-tools.test.ts
+│   ├── persisted-data-i18n.test.ts
+│   ├── phase5-product-surfaces.test.ts
+│   ├── platform-capabilities.test.ts
+│   ├── project-context.test.ts
+│   ├── projects-page.test.ts
+│   ├── request-augmentation.test.ts
+│   ├── shell-policy.test.ts
+│   ├── sidepanel-navigation.test.ts
+│   ├── skill-localization.test.ts
+│   ├── streaming-tool-call-parser.test.ts
+│   ├── streaming-tool-text.test.ts
+│   ├── sync-schema.test.ts
+│   ├── token-speed.test.ts
+│   ├── tool-block-style.test.ts
+│   ├── tool-execution-restore.test.ts
+│   ├── tool-parser.test.ts
+│   ├── tool-restore-block.test.ts
+│   ├── tool-result-renderer.test.ts
+│   ├── tool-scan-gate.test.ts
+│   ├── whats-new-panel.test.ts
+│   ├── whats-new.test.ts
+│   └── xml-tool-stream-filter.test.ts
+├── tree.txt
+├── tsconfig.json
+├── vitest.config.ts
+└── wxt.config.ts
+
+232 directories, 491 files

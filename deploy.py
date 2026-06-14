@@ -47,11 +47,23 @@ run_command_live("git status")
 print("\n📦 [ЭТАП 2] Добавление файлов в индекс Git...")
 run_command_live("git add -A")
 
+# --- ФИКС ФАНТОМНЫХ СБОРОК: Запоминаем текущий последний ID ДО ПУША ---
+print("\n🎯 Фиксируем состояние GitHub Actions перед отправкой...")
+last_known_id = None
+try:
+    pre_list = run_command_capture("gh run list --limit 1 --json databaseId")
+    pre_runs = json.loads(pre_list.stdout)
+    if pre_runs:
+        last_known_id = pre_runs[0]["databaseId"]
+        print(f"   Последний старый ID в системе: {last_known_id}")
+except Exception:
+    print("   История сборок пуста или недоступна.")
+
 unique_suffix = int(time.time())
 tag_name = f"v0.7.1-auto-{unique_suffix}"
 
 print(f"\n📝 [ЭТАП 3] Создание коммита и генерация тега {tag_name}...")
-run_command_live('git commit -m "fix: restore standard chromium set for i18n bypass" --verbose')
+run_command_live('git commit -m "fix: enforce precise run id filtering against api lag" --verbose')
 run_command_capture(f"git tag {tag_name}")
 
 branch_res = run_command_capture("git branch --show-current")
@@ -64,27 +76,36 @@ if push_tag_res.returncode != 0:
     print("❌ Ошибка отправки тега.")
     sys.exit(1)
 
-print("\n⏳ [ЭТАП 5] Ожидание инициализации любого нового процесса на сервере...")
-time.sleep(8) # Даем фору на старт
-
+print("\n⏳ [ЭТАП 5] Ожидание инициализации РЕАЛЬНО НОВОГО процесса на сервере...")
 run_id = None
-for attempt in range(15):
-    print(f"Запрос статуса сборки (попытка {attempt + 1}/15)...", end="\r")
+
+for attempt in range(25):
+    print(f"Ожидание обновления API гитхаба (попытка {attempt + 1}/25)...", end="\r")
+    time.sleep(4)
+    
     run_list_res = run_command_capture("gh run list --limit 3 --json databaseId,status")
     try:
         runs = json.loads(run_list_res.stdout)
         if runs:
-            # Железобетонно берем самую последнюю запущенную таску в репозитории
-            run_id = runs[0]["databaseId"]
-            print(f"\n🎯 СБОРКА ХВАТИЛАСЬ! ID процесса Actions: {run_id}")
-            break
+            latest_id = runs[0]["databaseId"]
+            # Если самый верхний ID в списке отличается от того, что был до пуша — это наш новый процесс!
+            if latest_id != last_known_id:
+                run_id = latest_id
+                print(f"\n🎯 НОВАЯ СБОРКА ПЕРЕХВАЧЕНА! ID процесса Actions: {run_id}")
+                break
     except Exception:
         pass
-    time.sleep(4)
 
 if not run_id:
-    print("\n❌ Сборка не найдена в API.")
-    sys.exit(1)
+    # Запасной вариант: если старых сборок вообще не было, берем то, что появилось
+    try:
+        runs = json.loads(run_list_res.stdout)
+        if runs:
+            run_id = runs[0]["databaseId"]
+            print(f"\n🎯 Внимание: Применен резервный перехват. ID: {run_id}")
+    except Exception:
+        print("\n❌ Новый процесс сборки так и не появился в API.")
+        sys.exit(1)
 
 print("\n🔄 [ЭТАП 6] Мониторинг сборки на GitHub...")
 print("=============================================================")

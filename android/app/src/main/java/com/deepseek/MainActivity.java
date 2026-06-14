@@ -5,7 +5,6 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebChromeClient;
 import android.webkit.JavascriptInterface;
-import android.webkit.ValueCallback;
 import android.content.SharedPreferences;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -13,6 +12,11 @@ import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import com.google.android.gms.auth.api.signin.GoogleSignIn;
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.auth.api.signin.GoogleSignInClient;
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.firebase.auth.FirebaseAuth;
 import okhttp3.*;
 import org.json.JSONObject;
 import java.io.IOException;
@@ -25,6 +29,8 @@ public class MainActivity extends AppCompatActivity {
     private SharedPreferences prefs;
     private OkHttpClient httpClient;
     private String mcpServerUrl;
+    private GoogleSignInClient googleSignInClient;
+    private FirebaseAuth firebaseAuth;
     
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -34,8 +40,15 @@ public class MainActivity extends AppCompatActivity {
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         
+        // Initialize Google Sign-In
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .build();
+        googleSignInClient = GoogleSignIn.getClient(this, gso);
+        firebaseAuth = FirebaseAuth.getInstance();
+        
         prefs = getSharedPreferences("DeepSeekPP", MODE_PRIVATE);
-        mcpServerUrl = prefs.getString("mcp_server_url", "http://10.0.2.2:3000/mcp"); // 10.0.2.2 for emulator
+        mcpServerUrl = prefs.getString("mcp_server_url", "http://10.0.2.2:3000/mcp");
         
         httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -48,7 +61,14 @@ public class MainActivity extends AppCompatActivity {
         setupWebView();
         setupSwipeRefresh();
         
-        webView.loadUrl("https://chat.deepseek.com");
+        // Load DeepSeek with user info
+        String url = "https://chat.deepseek.com";
+        GoogleSignInAccount account = GoogleSignIn.getLastSignedInAccount(this);
+        if (account != null) {
+            // Add user info to URL (if DeepSeek supports it)
+            url = "https://chat.deepseek.com?email=" + account.getEmail();
+        }
+        webView.loadUrl(url);
     }
     
     private void setupWebView() {
@@ -58,7 +78,6 @@ public class MainActivity extends AppCompatActivity {
         webView.getSettings().setAllowContentAccess(true);
         webView.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         
-        // Enable debugging for Chrome DevTools
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
             WebView.setWebContentsDebuggingEnabled(true);
         }
@@ -69,6 +88,7 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 swipeRefresh.setRefreshing(false);
                 injectMCPBridge();
+                injectUserCredentials();
             }
             
             @Override
@@ -78,9 +98,24 @@ public class MainActivity extends AppCompatActivity {
         });
         
         webView.setWebChromeClient(new WebChromeClient());
-        
-        // Add JavaScript interface
         webView.addJavascriptInterface(new MCPBridge(), "AndroidMCP");
+    }
+    
+    private void injectUserCredentials() {
+        GoogleSignInAccount account = GoogleSignIn.getLastSignedInAccount(this);
+        if (account != null) {
+            String jsCode = 
+                "(function() {" +
+                "    console.log('Injecting Google user: " + account.getEmail() + "');" +
+                "    // Try to auto-fill login form if present" +
+                "    var emailInput = document.querySelector('input[type=\"email\"]');" +
+                "    if (emailInput) {" +
+                "        emailInput.value = '" + account.getEmail() + "';" +
+                "        emailInput.dispatchEvent(new Event('input', { bubbles: true }));" +
+                "    }" +
+                "})();";
+            webView.evaluateJavascript(jsCode, null);
+        }
     }
     
     private void injectMCPBridge() {
@@ -101,9 +136,7 @@ public class MainActivity extends AppCompatActivity {
     }
     
     private void setupSwipeRefresh() {
-        swipeRefresh.setOnRefreshListener(() -> {
-            webView.reload();
-        });
+        swipeRefresh.setOnRefreshListener(() -> webView.reload());
         swipeRefresh.setColorSchemeResources(android.R.color.holo_blue_dark);
     }
     
@@ -117,8 +150,7 @@ public class MainActivity extends AppCompatActivity {
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
         if (id == R.id.action_settings) {
-            // Open settings activity
-            android.content.Intent intent = new android.content.Intent(this, SettingsActivity.class);
+            Intent intent = new Intent(this, SettingsActivity.class);
             startActivity(intent);
             return true;
         } else if (id == R.id.action_reload) {
@@ -128,8 +160,19 @@ public class MainActivity extends AppCompatActivity {
             webView.clearCache(true);
             Toast.makeText(this, "Cache cleared", Toast.LENGTH_SHORT).show();
             return true;
+        } else if (id == R.id.action_sign_out) {
+            signOut();
+            return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+    
+    private void signOut() {
+        googleSignInClient.signOut().addOnCompleteListener(this, task -> {
+            firebaseAuth.signOut();
+            Toast.makeText(this, "Signed out", Toast.LENGTH_SHORT).show();
+            recreate();
+        });
     }
     
     @Override
@@ -141,7 +184,13 @@ public class MainActivity extends AppCompatActivity {
         }
     }
     
-    // JavaScript interface for MCP
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mcpServerUrl = prefs.getString("mcp_server_url", "http://10.0.2.2:3000/mcp");
+        injectMCPBridge();
+    }
+    
     private class MCPBridge {
         @JavascriptInterface
         public void callMCP(String method, String paramsJson, final String callbackId) {
@@ -196,13 +245,5 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
         }
-    }
-    
-    @Override
-    protected void onResume() {
-        super.onResume();
-        // Reload MCP URL from settings
-        mcpServerUrl = prefs.getString("mcp_server_url", "http://10.0.2.2:3000/mcp");
-        injectMCPBridge();
     }
 }

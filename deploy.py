@@ -63,7 +63,7 @@ def smart_parse_errors(run_id, repo):
     
     errors = []
     for line in raw_logs.splitlines():
-        if any(x in line for x in ["failed", "must keep", "❌", "##[error]", "Error:", "failed:", "Validate release ref"]):
+        if any(x in line for x in ["failed", "must keep", "❌", "##[error]", "Error:", "failed:", "Invalid release ref"]):
             clean = re.sub(r".*Run quality gates\s+\d+-%d+-%d+T\d+:\d+:\d+\.\d+Z\s+", "", line)
             if clean.strip() and clean.strip() not in errors:
                 errors.append(clean.strip())
@@ -73,11 +73,12 @@ def smart_parse_errors(run_id, repo):
             print(f"🚨 {err}")
         
         # Специальная проверка для ошибки валидации тега
-        if "Validate release ref" in str(errors):
-            print("\n💡 ВЕРСИЯ ТЕГА НЕ СООТВЕТСТВУЕТ package.json!")
-            current_ver = get_current_version()
-            print(f"   Текущая версия в package.json: v{current_ver}")
-            print(f"   Используйте тег: v{current_ver}")
+        if "Invalid release ref" in str(errors):
+            print("\n💡 НЕВЕРНЫЙ ФОРМАТ ТЕГА!")
+            print("   Допустимые форматы:")
+            print("   - v0.7.1")
+            print("   - v0.7.1-auto-1234567890")
+            print("   (используйте ДЕФИС, а не подчеркивание!)")
     else:
         print("Критическая ошибка в логах не отфильтрована. Последние 10 строк:")
         for line in raw_logs.splitlines()[-10:]:
@@ -117,9 +118,9 @@ if answer in ["y", "yes", "д", "да"]:
         update_version_in_files(new_version)
         current_version = new_version
 
-# Генерируем тег, совместимый с GitHub Actions
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-# Используем версию из package.json для тега
+# Генерируем тег в формате, который принимает воркфлоу
+# Используем ДЕФИС вместо подчеркивания
+timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")  # дефис вместо подчеркивания
 tag_name = f"v{current_version}-auto-{timestamp}"
 print(f"\n🏷️  Создаём тег: {tag_name}")
 
@@ -128,8 +129,7 @@ run_command_live("git status")
 run_command_live("git add -A")
 
 print(f"\n📝 [ЭТАП 2] Коммит и создание тега {tag_name}...")
-# Используем сообщение коммита, которое не вызовет проблем
-run_command_live(f'git commit -m "build: auto-deploy v{current_version} [skip ci]" --verbose')
+run_command_live(f'git commit -m "build: auto-deploy v{current_version}" --verbose')
 run_command_capture(f"git tag {tag_name}")
 
 branch_res = run_command_capture("git branch --show-current")
@@ -146,18 +146,19 @@ print("\n⏳ [ЭТАП 4] Ожидание запуска Actions...")
 time.sleep(5)
 run_id = None
 
-for attempt in range(30):
-    print(f"\n--- Попытка поиска {attempt + 1}/30 ---")
-    cmd = f"gh run list --repo={TARGET_REPO} --limit 5 --json databaseId,workflowName,status,conclusion,createdAt,event"
+for attempt in range(35):
+    print(f"\n--- Попытка поиска {attempt + 1}/35 ---")
+    cmd = f"gh run list --repo={TARGET_REPO} --limit 5 --json databaseId,workflowName,status,conclusion,createdAt,event,displayTitle"
     res = run_command_capture(cmd)
     
     try:
         runs = json.loads(res.stdout)
         if runs:
             print(f"📋 Найдено недавних сборок: {len(runs)}")
-            # Ищем сборку, запущенную по нашему тегу
+            # Ищем сборку, связанную с нашим тегом
             for run in runs:
-                if run["event"] == "push" and run["status"] in ["in_progress", "queued", "waiting"]:
+                # Проверяем по displayTitle или event
+                if run.get("event") == "push" and run["status"] in ["in_progress", "queued", "waiting"]:
                     run_id = run["databaseId"]
                     wf_name = run["workflowName"]
                     print(f"🎯 НАШЛИ АКТИВНУЮ СБОРКУ! ID: {run_id} [{wf_name}]")
@@ -180,42 +181,48 @@ for attempt in range(30):
     time.sleep(5)
 
 if not run_id:
-    print("\n⚠️ Активный процесс не найден. Возможно, Actions не запустились.")
+    print("\n⚠️ Активный процесс не найден. Возможно, Actions уже завершились.")
     print("💡 Проверьте вручную: https://github.com/" + TARGET_REPO + "/actions")
-    sys.exit(1)
-
-print("\n🔄 [ЭТАП 5] Подключение к трансляции логов...")
-print("=============================================================")
-try:
-    run_command_live(f"gh run watch {run_id} --repo={TARGET_REPO}")
-except Exception as e:
-    print(f"⚠️ Сетевое прерывание: {e}")
-
-time.sleep(4)
-
-final_check = run_command_capture(f"gh run view {run_id} --repo={TARGET_REPO} --json conclusion,workflowName")
-try:
-    final_data = json.loads(final_check.stdout)
-    conclusion = final_data.get("conclusion")
-    wf_name = final_data.get("workflowName")
-except Exception:
-    conclusion = "unknown"
-    wf_name = "unknown"
-
-if conclusion != "success":
-    print(f"\n❌ СБОРКА [{wf_name}] ЗАВЕРШИЛАСЬ С ОШИБКОЙ: {conclusion}")
-    smart_parse_errors(run_id, TARGET_REPO)
+    print("\n📋 Последние запуски:")
+    run_command_live(f"gh run list --repo={TARGET_REPO} --limit 5")
     
-    # Дополнительная диагностика
-    print("\n📋 Проверка тега:")
-    print(f"   Тег: {tag_name}")
-    print(f"   Версия в package.json: v{current_version}")
-    print("\n💡 Если ошибка связана с несовпадением версий, попробуйте:")
-    print("   1. Убедитесь, что тег начинается с 'v' и версия совпадает")
-    print("   2. Запустите сборку вручную из интерфейса GitHub Actions")
-    sys.exit(1)
+    # Попробуем взять последний завершённый ран
+    print("\n🔄 Пробуем взять последнюю завершённую сборку...")
+    cmd = f"gh run list --repo={TARGET_REPO} --limit 1 --json databaseId,status"
+    try:
+        res = json.loads(run_command_capture(cmd).stdout)
+        if res and res[0].get("status") == "completed":
+            run_id = res[0]["databaseId"]
+            print(f"🎯 Берём последнюю сборку: {run_id}")
+    except Exception as e:
+        print(f"❌ Не удалось получить список сборок: {e}")
+        sys.exit(1)
 
-print(f"\n✅ Сборка [{wf_name}] успешна! Скачиваем расширение...")
+if run_id:
+    print("\n🔄 [ЭТАП 5] Подключение к трансляции логов...")
+    print("=============================================================")
+    try:
+        run_command_live(f"gh run watch {run_id} --repo={TARGET_REPO}")
+    except Exception as e:
+        print(f"⚠️ Сетевое прерывание: {e}")
+
+    time.sleep(4)
+
+    final_check = run_command_capture(f"gh run view {run_id} --repo={TARGET_REPO} --json conclusion,workflowName")
+    try:
+        final_data = json.loads(final_check.stdout)
+        conclusion = final_data.get("conclusion")
+        wf_name = final_data.get("workflowName")
+    except Exception:
+        conclusion = "unknown"
+        wf_name = "unknown"
+
+    if conclusion != "success":
+        print(f"\n❌ СБОРКА [{wf_name}] ЗАВЕРШИЛАСЬ С ОШИБКОЙ: {conclusion}")
+        smart_parse_errors(run_id, TARGET_REPO)
+        sys.exit(1)
+
+    print(f"\n✅ Сборка [{wf_name}] успешна! Скачиваем расширение...")
 
 print("\n📦 [ЭТАП 6] Скачивание артефактов...")
 time.sleep(3)
@@ -235,7 +242,7 @@ final_zip_name = None
 for root, dirs, files in os.walk("./build_artifacts"):
     for file in files:
         if file.endswith(".zip"):
-            timestamp_filename = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp_filename = datetime.now().strftime("%Y%m%d-%H%M%S")
             new_filename = f"deepseek-pp_{current_version}_{timestamp_filename}.zip"
             source_path = os.path.join(root, file)
             dest_path = os.path.join(BUILD_DIR, new_filename)

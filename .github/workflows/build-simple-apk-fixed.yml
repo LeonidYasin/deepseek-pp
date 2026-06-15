@@ -21,43 +21,29 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
     
-    - name: Create Android project
+    - name: Create simple Android project
       run: |
-        # Create project structure
-        mkdir -p app/src/main/java/com/deepseek/simple
-        mkdir -p app/src/main/res/values
-        mkdir -p app/src/main/res/layout
+        mkdir -p simple-android/app/src/main/java/com/deepseek
+        mkdir -p simple-android/app/src/main/res/layout
+        mkdir -p simple-android/app/src/main/res/values
         
-        # Create build.gradle (root)
-        cat > build.gradle << 'EOF'
+        # Create build.gradle
+        cat > simple-android/build.gradle << 'EOF'
         buildscript {
-            repositories {
-                google()
-                mavenCentral()
-            }
-            dependencies {
-                classpath 'com.android.tools.build:gradle:7.4.2'
-            }
+            repositories { google(); mavenCentral() }
+            dependencies { classpath 'com.android.tools.build:gradle:7.4.2' }
         }
         allprojects {
-            repositories {
-                google()
-                mavenCentral()
-            }
+            repositories { google(); mavenCentral() }
         }
         EOF
         
-        # Create settings.gradle
-        echo 'include ":app"' > settings.gradle
-        
         # Create app/build.gradle
-        cat > app/build.gradle << 'EOF'
+        cat > simple-android/app/build.gradle << 'EOF'
         apply plugin: 'com.android.application'
-        
         android {
             namespace 'com.deepseek.simple'
             compileSdk 33
-            
             defaultConfig {
                 applicationId 'com.deepseek.simple'
                 minSdk 24
@@ -65,83 +51,64 @@ jobs:
                 versionCode 1
                 versionName '1.0'
             }
-            
-            buildTypes {
-                debug {
-                    debuggable true
-                }
-            }
         }
-        
         dependencies {
             implementation 'androidx.appcompat:appcompat:1.6.1'
         }
         EOF
         
         # Create AndroidManifest.xml
-        cat > app/src/main/AndroidManifest.xml << 'EOF'
+        cat > simple-android/app/src/main/AndroidManifest.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.INTERNET" />
-            <application
-                android:label="DeepSeek++"
-                android:usesCleartextTraffic="true"
-                android:theme="@style/Theme.AppCompat.Light">
-                <activity
-                    android:name=".MainActivity"
-                    android:exported="true">
-                    <intent-filter>
-                        <action android:name="android.intent.action.MAIN" />
-                        <category android:name="android.intent.category.LAUNCHER" />
-                    </intent-filter>
+            <application android:label="DeepSeek++" android:usesCleartextTraffic="true">
+                <activity android:name=".MainActivity" android:exported="true">
+                    <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
                 </activity>
             </application>
         </manifest>
         EOF
         
         # Create MainActivity.java
-        cat > app/src/main/java/com/deepseek/simple/MainActivity.java << 'EOF'
-        package com.deepseek.simple;
-        
+        cat > simple-android/app/src/main/java/com/deepseek/MainActivity.java << 'EOF'
+        package com.deepseek;
         import android.os.Bundle;
         import android.webkit.WebView;
-        import android.webkit.WebViewClient;
         import androidx.appcompat.app.AppCompatActivity;
-        
         public class MainActivity extends AppCompatActivity {
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
-                
                 WebView webView = new WebView(this);
                 webView.getSettings().setJavaScriptEnabled(true);
-                webView.setWebViewClient(new WebViewClient());
                 webView.loadUrl("https://chat.deepseek.com");
-                
                 setContentView(webView);
             }
         }
         EOF
         
-        # Create strings.xml
-        cat > app/src/main/res/values/strings.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <resources>
-            <string name="app_name">DeepSeek++</string>
-        </resources>
-        EOF
+        # Create settings.gradle
+        echo "include ':app'" > simple-android/settings.gradle
         
         # Create gradle wrapper
-        gradle wrapper --gradle-version 7.5
+        cd simple-android
+        gradle wrapper --gradle-version 7.5 --no-daemon
     
     - name: Grant execute permission
-      run: chmod +x gradlew
+      run: chmod +x simple-android/gradlew
     
-    - name: Build APK
-      run: ./gradlew assembleDebug --no-daemon --stacktrace
+    - name: Clean npm cache and build APK
+      run: |
+        cd simple-android
+        # Очищаем кэш gradle
+        ./gradlew clean --no-daemon
+        # Собираем APK
+        ./gradlew assembleDebug --no-daemon --stacktrace
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: deepseek-simple-apk
-        path: app/build/outputs/apk/debug/*.apk
+        path: simple-android/app/build/outputs/apk/debug/*.apk
+        retention-days: 30

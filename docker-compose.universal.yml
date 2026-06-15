@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  mcp-universal:
+    build:
+      context: .
+      dockerfile: Dockerfile.universal
+    container_name: mcp-universal-server
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./workspace:/workspace
+      - gh-config:/root/.config/gh
+    environment:
+      - WORKSPACE=/workspace
+    restart: unless-stopped
+
+volumes:
+  gh-config:
